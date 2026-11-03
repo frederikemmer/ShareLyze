@@ -6,6 +6,7 @@ ShareLyze ist eine eigenständige, selbst gehostete Anwendung zum Freigeben best
 
 - ShareLyze wird eigenständig in TypeScript implementiert und unter AGPL-3.0 veröffentlicht. SelfDrop dient ausschließlich als Beispiel und fachliche Referenz: keinen SelfDrop-Code, keine Styles, Assets oder sonstigen Projektbestandteile übernehmen. Ein GitHub-Fork ist nicht die geplante Grundlage.
 - Das Design orientiert sich an MediaLyze unter `/Users/frederikemmer/CODE/MediaLyze`, sofern lokal verfügbar. Bestehende MediaLyze-Bausteine dürfen gezielt übernommen und angepasst werden; Herkunft, Urheber- und Lizenzhinweise sowie Drittanbieter-Lizenzen beachten. Keine lokalen absoluten Pfade als Laufzeitabhängigkeit einführen.
+- Für Symbole Lucide verwenden; sinnvolle Animationen bevorzugen, ohne Bedienung zu erschweren. `prefers-reduced-motion` beachten und Lizenzen zusätzlicher Icon-Bausteine prüfen.
 - Dateien auf Speicherquellen bleiben unverändert; lesende Docker-Bind-Mounts sind der erste Speicher-Backend-Typ. Keine vollständigen temporären Kopien oder ZIP-Archive für Downloads voraussetzen.
 - Ordnerfreigaben zeigen dynamisch den aktuellen Inhalt. Ein ZIP-Download erhält beim Start eine feste Dateiliste und wird gestreamt; er ist im MVP nicht fortsetzbar. Einzeldateien unterstützen fortsetzbare Downloads mit HTTP Range.
 - Sicherheit, Zugriffsschutz und Datenschutz gehören zum MVP. Downloadlimits gehören ausdrücklich nicht zum Funktionsumfang.

@@ -1,6 +1,6 @@
 # ShareLyze – Projektziel und MVP-Plan
 
-Stand: 2. November 2026. Dieses Dokument hält die bisher besprochenen Entscheidungen fest und ist ein Ausgangspunkt für nachfolgende Entwicklungsagents. Es beschreibt ein Zielbild, keine bereits vorhandene Implementierung.
+Stand: 2. November 2026. Dieses Dokument hält die bisher besprochenen Entscheidungen fest und ist ein Ausgangspunkt für nachfolgende Entwicklungsagents. Es beschreibt das Zielbild; den tatsächlichen Stand hält der Abschnitt „Umsetzungsstand“ fest.
 
 ## Produktziel
 
@@ -13,7 +13,7 @@ Zielplattform ist unter anderem ein UGREEN NAS mit Docker Compose und Reverse Pr
 ## Herkunft und Lizenz
 
 - **Eigenständige Neuimplementierung**, kein Fork von SelfDrop und keine Übernahme von SelfDrop-Code, CSS, Assets oder anderen Projektbestandteilen. SelfDrop darf als Beispiel für Funktionen und technische Ansätze untersucht werden; daraus folgt keine Erlaubnis, Ausdrucksformen zu kopieren. Frühere Fork-Empfehlungen sind überholt.
-- ShareLyze soll unter **AGPL-3.0** stehen. Bei Projektinitialisierung die genaue SPDX-Bezeichnung und Lizenzdatei entsprechend der gewählten AGPL-Variante festlegen; eine zusätzliche „or later“-Erlaubnis ist bislang nicht entschieden.
+- ShareLyze verwendet vorläufig **AGPL-3.0-only** (`LICENSE`, `package.json`); eine zusätzliche „or later“-Erlaubnis wurde nicht angenommen.
 - MediaLyze ist die gewünschte Design- und CI-Referenz. Bei gezielter Übernahme von MediaLyze-Bestandteilen deren Herkunft, geltende Lizenz- und Urheberhinweise sowie die Lizenzen von Abhängigkeiten und Assets berücksichtigen. Keine implizite Annahme, dass alle Drittbestandteile dieselbe Lizenz haben.
 - Ein SelfDrop-Verweis ist kein Produktziel; die hier dokumentierte Herkunftsentscheidung soll Agents helfen, die Grenze der Wiederverwendung zu verstehen.
 
@@ -111,10 +111,66 @@ Ein MVP gilt erst als abgenommen, wenn Freigabe, Kurzlink, Zugriffsschutz, Einze
 
 ## Offene Entscheidungen
 
-- AGPL-3.0-only oder AGPL-3.0-or-later; genaue Hinweise bei MediaLyze-Übernahmen.
+- Lizenzvariante AGPL-3.0-only ist vorläufig gewählt; genaue Hinweise und Drittanbieter-Lizenzen bei konkreten MediaLyze-Übernahmen prüfen.
 - Konkrete Testgrößen, Anzahl paralleler Downloads und akzeptabler Ressourcenverbrauch auf dem Ziel-NAS.
 - Analytik-Aufbewahrungsdauer, Aggregation und Löschverhalten nach Entfernen einer Freigabe.
 - Slug-Normalisierung, Wiedervergabe gelöschter Slugs und konkrete reservierte Routen.
 - Handhabung von ZIP-Namenskollisionen, leeren Ordnern und sehr großen Dateilisten.
 - Genaue Erstkonfiguration bei öffentlich erreichbarem Admin sowie Mechanismus für sichere Dateideskriptor-basierte Pfadauflösung auf Linux.
 - Vorschauformate und weitere Storage-Backends nach dem MVP.
+
+## Umsetzungsstand und Audit – 2. November 2026
+
+**Funktionsumfang weitgehend vorhanden; MVP noch nicht vollständig abgenommen.** Für einen öffentlichen Produktiveinsatz fehlen die unten genannten Zielsystem-, Release- und umfassenden Sicherheits-/Barrierefreiheitsprüfungen.
+
+Der Abschlussabgleich mit konkreten Auditbefunden, Korrekturen und Prüfgrenzen steht in [MVP_AUDIT.md](MVP_AUDIT.md).
+
+### Implementiert
+
+- MediaLyze-orientierter Kopfbereich mit großer Wortmarke, Versionsplakette, abgerundeter Navigationskapsel, hellem aktivem Symbol und Kontomenü zum Abmelden. Der Abstand zum Admin-Inhalt beträgt 10 px. Auf kleinen Bildschirmen ersetzt das ShareLyze-Symbol die Wortmarke. Die Navigation erscheint nur für angemeldete Administratoren; die bisherige Seitenleiste entfällt. Die aktuelle optische Angleichung wurde anhand der MediaLyze-Styles vorgenommen; ein erneuter visueller Browservergleich steht aus.
+- Nach Nutzervergleich der beiden Header wurden Symbolbreite und -größe, Einstellungs-Zahnrad, Umrandung der aktiven Auswahl und Tooltips an MediaLyze angeglichen. Ein visueller Nachtest der Anpassung steht noch aus.
+- Die aktive Markierung der Headernavigation gleitet beim Ansichtswechsel zum gewählten Symbol; bei aktivierter Systemeinstellung für reduzierte Bewegung entfällt die Animation. Ein visueller und interaktiver Nachtest steht noch aus.
+- Die Überschrift der Freigabenansicht lautet „Datenfreigabe“.
+- Freigabeübersicht mit Suche, Statusfiltern samt Zählern, Kurzname, Downloadstarts, Ablauf und Aktionen; auf schmalen Ansichten umbrechend. Downloadstarts umfassen auch Range-Anfragen und beziehen sich auf die Analytics-Aufbewahrungsdauer; Downloadlimits bleiben ausgeschlossen. Ein visueller und interaktiver Nachtest steht noch aus.
+- Die Statusfilter verwenden ein zusammenhängendes Toggle-Menü nach MediaLyze-Vorbild; auf schmalen Ansichten ist die Leiste horizontal scrollbar.
+- Die Kurzlinkübersicht nutzt denselben Aufbau mit Suche, Statusfiltern und Zählern, Zieladresse, Weiterleitungen und Aktionen. Weiterleitungen umfassen die erfassten Ereignisse innerhalb der Aufbewahrungsdauer; Kurzlinks besitzen derzeit kein Ablaufdatum. Ein visueller und interaktiver Nachtest steht aus.
+- Lucide ist die Icon-Vorgabe; Animationen bei sinnvollem Einsatz unter Berücksichtigung reduzierter Bewegung und Drittanbieter-Lizenzen.
+- Die äußeren Seitenabstände und die maximale Breite orientieren sich am MediaLyze-Layout (10 px oben, seitlich 8–24 px zuzüglich Safe Area, maximal 1500 px).
+- Admin-Oberfläche mit eigenständigen Bereichen für Freigaben, Kurzlinks, Statistiken und Einstellungen, kompakteren Listen und innenliegenden Feldbeschriftungen. Die Dateiauswahl bietet Pfadnavigation und Mehrfachauswahl sichtbarer Einträge; pro Freigabe sind höchstens 500 direkt ausgewählte Elemente möglich. Ordner bleiben dynamisch.
+- Die öffentliche Linkadresse lässt sich persistent in den Einstellungen ändern und wird für kopierte Links verwendet. Sie konfiguriert weder DNS noch Reverse Proxy oder den als Sicherheitsgrenze verwendeten Admin-Ursprung `PUBLIC_ORIGIN`; letzterer muss weiterhin separat zum tatsächlichen Admin-Aufruf passen. HTTPS ist erforderlich, HTTP nur für Loopback. SQLite-Migration 5 speichert diese Einstellung.
+- Statistikseite mit Link- und Ereignisfilter, Tagesverlauf und Dateiübersicht. Die Dateiübersicht ist auf die 100 häufigsten Einträge über alle Links begrenzt; Filter zeigen nur Einträge innerhalb dieser Auswahl. Downloadstarts zählen auch Range-Anfragen und abgeschlossene Serverübertragungen belegen keine Speicherung beim Empfänger.
+- Eigenständige TypeScript-Anwendung, SQLite-Migrationen, Admin-Ersteinrichtung mit Setup-Token, scrypt-Passwortprüfung, widerrufbare Sessions, Origin-Schutz und getrennte Rate-Limits für Setup, Login, Freigabe-Passwort und öffentliche Ordneransicht. Vertrauenswürdige Proxy-Adressen sind ausdrücklich zu konfigurieren; ohne sie teilen sich Clients hinter einem Proxy ein Limit.
+- Mehrere Quellen über `SOURCES_JSON`, dynamische Ordner- und Dateifreigaben, Ablauf, Passwort, Bearbeiten/Deaktivieren sowie Freigabe- und externe Kurzlinks. Entfernte Quellen werden deaktiviert; ein von bestehenden Freigaben genutzter Quellenpfad darf nicht stillschweigend ersetzt werden.
+- Linux-Dateizugriff über gehaltene Verzeichnis-Deskriptoren mit Symlink- und Sonderdatei-Abweisung. Ordneransichten begrenzen die eingelesenen Einträge auf 10.000 und öffentliche Ansichten sind gedrosselt. Größere Ordner benötigen später Pagination; sie werden derzeit abgelehnt.
+- Datei-Streaming mit Range/If-Range, maximal 32 parallele Dateitransfers und drei ZIP-Streams. ZIPs nutzen eine feste Liste, keine vollständige Kopie und höchstens 10.000 Einträge/50 Ebenen. Metadaten werden vor und nach dem Lesen verglichen. Das ist keine atomare Momentaufnahme: Änderungen gleicher Metadaten oder bereits übermittelte Bytes können nicht garantiert erkannt oder zurückgenommen werden; für ZIPs ist Fortsetzen nicht vorgesehen.
+- Ereignisse und Tageswerte je Link, Dateien und Freigaben mit konfigurierbarer Löschung nach standardmäßig 30 Tagen. Ereignisse sind keine eindeutigen Personen oder sichere Bestätigung, dass eine Datei beim Empfänger gespeichert wurde.
+- Admin- und öffentliche Oberfläche mit Suche, Inline-Kurzlinkbearbeitung, responsivem Layout und systemgesteuertem Dark Mode. Beim Ersetzen von Freigabeinhalten wird die aktuell ausgewählte Liste angezeigt und eine Änderung der Auswahl hebt die Ersetzungsoption wieder auf. Visuelle Nähe zu MediaLyze und umfassende Barrierefreiheit sind noch nicht vollständig abgenommen.
+- Docker/Compose, lokale Startskripte, CI mit Typecheck/Tests/Audit/Container-Last- und Integritätsprüfungen; Multi-Arch-Publishing für `dev`/`main` und versionierte Tags sowie taggebundene Release-Metadatenprüfung und GitHub-Release-Workflow. Release-Publishing und GitHub-Berechtigungen sind noch nicht live geprüft; `0.1.0` ist im Changelog weiterhin unveröffentlicht.
+- Zusätzliche NAS-Compose-Vorlage `docker-compose.nas.yml` im MediaLyze-Stil mit externer Docker-Bridge, persistentem Konfigurations-Bind-Mount und zwei lesenden Beispielquellen. Der Container nutzt intern Port 3000 und UID/GID 1000; ein Upload-Verzeichnis ist nicht vorgesehen. Das angegebene GHCR-Dev-Image lieferte bei einer Manifest-Abfrage `manifest unknown` und ist daher nicht als verfügbar nachgewiesen; tatsächliche NAS-/Zoraxy-Prüfung bleibt offen.
+
+### Nachweise
+
+- NAS-Compose-Vorlage syntaktisch mit `docker compose config --quiet` geprüft und mit lokal gebautem Image, temporären Test-Bind-Mounts, isoliertem Docker-Netz und HTTP-Loopback gestartet: Auth-Status HTTP 200 und SQLite-Datei im Konfigurationsordner vorhanden. Dies prüft weder GHCR-Pull noch NAS-Berechtigungen, Zoraxy oder HTTPS.
+- Isolierter Browserlauf für den neuen Kopfbereich: Einrichtung, Navigation zu Einstellungen, Kontomenü öffnen, Escape mit Rückkehr des Fokus und Abmelden. Bei 390 px Breite trat kein horizontaler Überlauf auf. Eine vollständige visuelle und Barrierefreiheitsprüfung bleibt offen.
+- Isolierter Linux-Docker-Browserlauf für die neuen Bereiche: Linkadresse gespeichert und nach Neuladen wiedergefunden, zwei sichtbare Dateien ausgewählt, Freigabe erstellt, kopierte Adresse geprüft, Datei heruntergeladen und Statistik einschließlich Linkfilter aufgerufen. Statistikansicht bei 390 px ohne horizontalen Überlauf geprüft. Keine vollständige visuelle oder Barrierefreiheitsabnahme; die abschließende Listenverfeinerung wurde anschließend vorgenommen.
+- Lokaler TypeScript-/Vite-Build, Produktions-Dependency-Audit ohne gemeldete Schwachstellen und automatisierte Tests erfolgreich. Auf macOS sind Linux-spezifische Tests übersprungen. Der aktuelle Lauf im Linux-Container besteht 23 Tests; zuvor liefen die Linux- und Symlink-Austauschtests auch im emulierten AMD64-Linux-Container.
+- Isolierte Docker-Tests: 32 pausierte Downloads akzeptiert, die 33. Anfrage abgewiesen und Kapazität nach Trennung wieder frei; Dateiänderungen während Einzel- und ZIP-Stream wurden in einer Probe nicht als abgeschlossene Transfers gezählt. Die vollständige Empfangbarkeit bzw. atomare Konsistenz ist dadurch nicht garantiert.
+- Zuvor vier parallele 64-MiB-Downloads mit SHA-256 verglichen; HEAD und die letzten Bytes einer sparsamen 4-GiB-plus-Datei über Range geprüft, keine vollständige 4-GiB-Übertragung. Keine garantierten Leistungswerte für echte NAS-Daten oder ZIPs dieser Größe.
+- Docker-Compose-Start/Healthcheck in isoliertem Projekt; HTTPS-Proxytest mit Nginx; SQLite-Sicherung und Wiederherstellung in separates Docker-Volume einschließlich erneutem Login und wiederhergestelltem Kurzlink. Windows-Startskript, Zoraxy und tatsächlicher UGREEN-NAS-Deploymentpfad nicht getestet; Linux-Startskript und macOS-Start wurden geprüft.
+- Echte Browseraktionen auf isoliertem Linux-Container: Einrichtung, passwortgeschützte Ordnerfreigabe, falsches und richtiges Passwort, mobile Ansichtsgröße 390 px, Einzel- und ZIP-Download, Statistik, Kurzlink-Erstellung und Inline-Bearbeitung. Die Downloadinhalte wurden überprüft. Dies ist keine vollständige visuelle, Tastatur- oder Barrierefreiheitsabnahme; spätere UI-Korrekturen sind darin nicht vollständig abgedeckt.
+- Zwei unabhängige lesende Audits meldeten Risiken zu Stream-/Verzeichnisgrenzen, Rate-Limit-Isolation, Dateiänderungen, Analytics und Auswahlbearbeitung. Korrekturen und die oben genannten Regressionstests wurden danach ergänzt; der abschließende Audit fand keinen belegbaren Zugriffsschutz-Bypass, ersetzt aber kein umfassendes Security-Audit.
+- NAS lesend erreicht: `DXP6800PRO`, `x86_64`. Keine Installation oder Änderungen auf dem NAS. Der NAS-SSH-Skill begrenzt diesen Zugriff auf lesende Aktionen.
+
+### Noch offen für die vollständige Abnahme
+
+1. Unabhängiges umfassendes Sicherheitsreview einschließlich Rest-Risiken beim Dateisystem, Rate-Limiting und Proxykonfiguration; zusätzliche ZIP-Fehler- und Langzeittests.
+2. Vollständige UX-, visuelle und Barrierefreiheitsprüfung inklusive neuer Auswahlbearbeitung und aktueller deutscher Fehlermeldungen; gegebenenfalls weitere Anpassung an MediaLyze.
+3. Praktischer Zoraxy- und UGREEN-NAS-Test mit ausdrücklich freigegebener isolierter Testumgebung sowie Windows-Startskript; keine Zielhardware- oder Zoraxy-Abnahme behaupten.
+4. Release-Automation und Multi-Arch-Publishing in GitHub nach Veröffentlichung eines passenden Versionstags verifizieren; bis dahin keinen erfolgreichen Remote-Release behaupten.
+5. Konkrete Leistungsziele für Dateigrößen/Parallelität festlegen und mit realistischen Daten auf der Zielhardware messen. Sehr große Verzeichnisse über 10.000 Einträge benötigen eine gesonderte Lösung.
+
+### Einrichtung: 403-Fehler (2. November 2026)
+
+- Im lokalen Entwicklungsmodus wurde ein Aufruf über `localhost` bei vorgegebenem Ursprung `127.0.0.1` abgewiesen. Entwicklungsstart erlaubt nun nur für ausdrücklich aktivierten, lokal gebundenen HTTP-Betrieb die Loopback-Namen auf demselben Port. Für öffentliche/Produktionskonfigurationen bleibt der konfigurierte Ursprung bindend.
+- API und Oberfläche unterscheiden einen abgelehnten Ursprung von einem falschen Einrichtungsschlüssel. Bei lokalem Start ohne eigenes `SETUP_TOKEN` ändert sich der generierte Schlüssel bei jedem Neustart; maßgeblich ist der aktuelle Terminal-Start.
+- Geprüft mit isolierter Datenbank und echtem Browser über `localhost`: falscher Schlüssel zeigt eine konkrete Meldung, richtiger Schlüssel erstellt das Konto. Die laufende Instanz und Daten des Nutzers wurden nicht verändert. Tests zu falschem Ursprung, falschem Port, deaktivierten Aliasen und öffentlichem Ursprung ergänzen die Prüfung.
