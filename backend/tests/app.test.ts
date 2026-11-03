@@ -119,6 +119,17 @@ describe("admin authentication", () => {
       isolated.close();
     }
   });
+  it("accepts configured LAN origins only in local development", async () => {
+    const isolated = openDatabase(":memory:");
+    const localApp = createApp({ db: isolated, publicOrigin: "http://127.0.0.1:5173", setupToken, secureCookies: false, allowLoopbackAliases: true, developmentOrigins: ["http://dev-pi.local:5173", "http://192.168.1.2:5173"] });
+    const credentials = { username: "admin", password: "correct horse battery staple", setupToken };
+    try {
+      await request(localApp).post("/api/auth/setup").set("Origin", "http://evil.local:5173").send(credentials).expect(403);
+      await request(localApp).post("/api/auth/setup").set("Origin", "http://dev-pi.local:5174").send(credentials).expect(403);
+      await request(localApp).post("/api/auth/setup").set("Origin", "http://dev-pi.local:5173").send(credentials).expect(201);
+      await request(localApp).post("/api/auth/login").set("Origin", "http://192.168.1.2:5173").send({ username: credentials.username, password: credentials.password }).expect(200);
+    } finally { isolated.close(); }
+  });
   it("keeps the origin strict unless development aliases are enabled", async () => {
     const isolated = openDatabase(":memory:");
     const strict = createApp({

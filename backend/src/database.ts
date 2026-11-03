@@ -6,7 +6,7 @@ export function openDatabase(filename: string): Database.Database {
   db.pragma("foreign_keys = ON");
   db.pragma("journal_mode = WAL");
   const version = db.pragma("user_version", { simple: true }) as number;
-  if (version > 5) {
+  if (version > 6) {
     db.close();
     throw new Error("Database version is newer than this application");
   }
@@ -48,6 +48,10 @@ export function openDatabase(filename: string): Database.Database {
       db.exec(
         "CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL); PRAGMA user_version = 5;",
       );
+    })();
+  if (version < 6)
+    db.transaction(() => {
+      db.exec("ALTER TABLE events ADD COLUMN ip_address TEXT; ALTER TABLE events ADD COLUMN user_agent TEXT; ALTER TABLE events ADD COLUMN referrer_origin TEXT; PRAGMA user_version = 6;");
     })();
   return db;
 }

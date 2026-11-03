@@ -101,6 +101,7 @@ const app = createApp({
     : undefined,
   trustedProxies,
   allowLoopbackAliases,
+  developmentOrigins: allowLoopbackAliases ? JSON.parse(process.env.SHARELYZE_DEV_ORIGINS || "[]") : [],
 });
 const port = Number(process.env.BACKEND_PORT || "3000");
 app.listen(port, host, () =>

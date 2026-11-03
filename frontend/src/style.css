@@ -402,6 +402,15 @@ input:invalid:not(:placeholder-shown) {
 .share-list-heading .search-field {
   width: min(300px, 100%);
 }
+.share-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 20px 0 16px;
+}
+.share-toolbar .share-filters { margin: 0; }
+.share-toolbar .search-field { width: min(300px, 100%); margin: 0; }
 .share-filters {
   display: flex;
   width: fit-content;
@@ -470,17 +479,19 @@ input:invalid:not(:placeholder-shown) {
 }
 .link-table-heading,
 .managed-row.link-table-row {
-  grid-template-columns: minmax(130px, 1fr) minmax(180px, 2fr) minmax(
+  grid-template-columns: minmax(180px, 2fr) minmax(130px, 1fr) minmax(
       90px,
       0.8fr
     ) minmax(100px, 0.8fr) minmax(220px, auto);
 }
 .link-target {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #5f5b52;
-  font-size: 0.8rem;
+  color: inherit;
+  font-size: 1rem;
+  font-weight: 650;
 }
 .link-stat {
   font-size: 0.8rem;
@@ -495,12 +506,22 @@ input:invalid:not(:placeholder-shown) {
   overflow-wrap: anywhere;
 }
 .share-slug {
+  display: inline-block;
+  justify-self: start;
+  max-width: 100%;
+  padding: 4px 8px;
+  border: 1px solid rgba(27, 129, 117, 0.4);
+  border-radius: 5px;
+  background: rgba(27, 129, 117, 0.08);
+  box-shadow: none;
+  text-align: left;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 0.8rem;
-  color: #5f5b52;
+  color: #146c62;
 }
+.share-slug:hover { background: rgba(27, 129, 117, 0.16); }
 .share-stat,
 .share-expiry {
   font-size: 0.8rem;
@@ -538,9 +559,8 @@ input:invalid:not(:placeholder-shown) {
     content: "Ablauf: ";
   }
   .link-target {
+    flex-basis: 100%;
     max-width: 100%;
-    overflow-wrap: anywhere;
-    white-space: normal;
   }
   .link-stat::before {
     content: "Weiterleitungen: ";
@@ -564,9 +584,8 @@ input:invalid:not(:placeholder-shown) {
     color: #f1eee7;
     background: #3a3632;
   }
-  .share-table-heading,
-  .share-slug,
-  .link-target {
+  .share-slug { color: #81d6c5; background: rgba(129, 214, 197, 0.1); border-color: rgba(129, 214, 197, 0.45); }
+  .share-table-heading {
     color: #b8b8b1;
   }
 }
@@ -1205,3 +1224,6 @@ input:invalid:not(:placeholder-shown) {
     color: #81d6c5;
   }
 }
+
+.visitor-event { padding: 12px 0; border-bottom: 1px solid var(--border, #8885); overflow-wrap: anywhere; }
+.visitor-event div { margin-top: 4px; }

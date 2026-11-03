@@ -1,8 +1,10 @@
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { resolve } from "node:path";
+import { mkdirSync } from "node:fs";
+import { hostname, networkInterfaces } from "node:os";
 
-const host = process.env.FRONTEND_HOST || "127.0.0.1";
+const host = process.env.FRONTEND_HOST || "0.0.0.0";
 const frontendPort = process.env.FRONTEND_PORT || "5173";
 const backendPort = process.env.BACKEND_PORT || "3000";
 const publicOrigin =
@@ -18,13 +20,21 @@ const originUrl = new URL(publicOrigin);
 const localAliases =
   originUrl.protocol === "http:" &&
   ["127.0.0.1", "localhost", "[::1]"].includes(originUrl.hostname);
+const machine = hostname().toLowerCase();
+const devHosts = [...new Set([machine, `${machine}.local`, ...Object.values(networkInterfaces()).flatMap((entries) => (entries ?? []).filter((entry) => entry.family === "IPv4").map((entry) => entry.address))])];
+const devOrigins = devHosts.map((name) => `http://${name}:${frontendPort}`);
+const testSource = resolve(".local-test-files");
+if (process.env.SOURCES_JSON === undefined) mkdirSync(testSource, { recursive: true });
 const env = {
   ...process.env,
+  SOURCES_JSON: process.env.SOURCES_JSON ?? JSON.stringify([{ id: "local-test", name: "Lokale Testdateien", root: testSource }]),
   BACKEND_PORT: backendPort,
   BACKEND_HOST: "127.0.0.1",
   PUBLIC_ORIGIN: publicOrigin,
   SETUP_TOKEN: setupToken,
   SHARELYZE_LOCAL_DEV: localAliases ? "1" : "0",
+  SHARELYZE_DEV_ORIGINS: localAliases ? JSON.stringify(devOrigins) : "[]",
+  SHARELYZE_DEV_HOSTS: localAliases ? JSON.stringify(devHosts) : "[]",
 };
 console.log(
   "ShareLyze development mode. Do not expose this unfinished application publicly.",
@@ -32,6 +42,8 @@ console.log(
 console.log(
   `Open ${publicOrigin}. Setup token for first-time setup: ${setupToken}`,
 );
+if (localAliases) console.log(`LAN addresses: ${devOrigins.join(", ")}`);
+if (process.env.SOURCES_JSON === undefined) console.log(`Local test source: ${testSource}`);
 const children = [
   spawn(
     process.execPath,

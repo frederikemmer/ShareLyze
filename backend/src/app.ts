@@ -1,3 +1,4 @@
+import { visitorDetails } from "./analytics";
 import express, {
   type Request,
   type Response,
@@ -23,6 +24,7 @@ interface AppOptions {
   frontendDir?: string;
   trustedProxies?: string[];
   allowLoopbackAliases?: boolean;
+  developmentOrigins?: string[];
 }
 
 /** This API is still under development and must not be exposed publicly. */
@@ -34,6 +36,7 @@ export function createApp({
   frontendDir,
   trustedProxies = [],
   allowLoopbackAliases = false,
+  developmentOrigins = [],
 }: AppOptions) {
   const publicUrl = new URL(publicOrigin);
   const origin = publicUrl.origin;
@@ -51,6 +54,12 @@ export function createApp({
       allowedOrigins.add(
         `http://${host}${publicUrl.port ? `:${publicUrl.port}` : ""}`,
       );
+  }
+  if (developmentOrigins.length && !allowLoopbackAliases) throw new Error("Development origins require local development mode");
+  for (const candidate of developmentOrigins) {
+    const parsed = new URL(candidate);
+    if (parsed.origin !== candidate || parsed.protocol !== "http:" || parsed.port !== publicUrl.port) throw new Error("Invalid development origin");
+    allowedOrigins.add(parsed.origin);
   }
   if (setupToken.length < 32)
     throw new Error("Setup token must contain at least 32 characters");
@@ -241,11 +250,13 @@ export function createApp({
   app.get("/api/admin/status", requireAdmin, (_req, res) => {
     res.json({ stage: "development" });
   });
-  app.get("/api/settings", requireAdmin, (_req, res) => {
+  app.get("/api/settings", requireAdmin, (req, res) => {
     const row = db
       .prepare("SELECT value FROM settings WHERE key='public_link_origin'")
       .get() as { value: string } | undefined;
-    res.json({ publicLinkOrigin: row?.value ?? origin, defaultOrigin: origin });
+    const requestedOrigin = `${req.protocol}://${req.get("host")}`;
+    const defaultOrigin = allowLoopbackAliases && allowedOrigins.has(requestedOrigin) ? requestedOrigin : origin;
+    res.json({ publicLinkOrigin: row?.value ?? defaultOrigin, defaultOrigin });
   });
   app.put("/api/settings", requireAdmin, (req, res) => {
     const value = req.body?.publicLinkOrigin;
@@ -386,8 +397,8 @@ export function createApp({
       return;
     }
     db.prepare(
-      "INSERT INTO events(link_id,type,created_at) VALUES (?,?,?)",
-    ).run(row.id, "redirect", new Date().toISOString());
+      "INSERT INTO events(link_id,type,created_at,ip_address,user_agent,referrer_origin) VALUES (?,?,?,?,?,?)",
+    ).run(row.id, "redirect", new Date().toISOString(), ...visitorDetails(req));
     res.redirect(302, row.target_url);
   });
   app.use(
@@ -419,8 +430,8 @@ export function createApp({
     }
     if (link.target_url) {
       db.prepare(
-        "INSERT INTO events(link_id,type,created_at) VALUES (?,?,?)",
-      ).run(link.id, "redirect", new Date().toISOString());
+        "INSERT INTO events(link_id,type,created_at,ip_address,user_agent,referrer_origin) VALUES (?,?,?,?,?,?)",
+      ).run(link.id, "redirect", new Date().toISOString(), ...visitorDetails(req));
       res.redirect(302, link.target_url);
       return;
     }

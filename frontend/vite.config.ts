@@ -5,6 +5,7 @@ export default defineConfig({
   root: resolve(import.meta.dirname),
   plugins: [react()],
   server: {
+    allowedHosts: JSON.parse(process.env.SHARELYZE_DEV_HOSTS || "[]") as string[],
     proxy: {
       "/api": `http://127.0.0.1:${process.env.BACKEND_PORT || "3000"}`,
       "/r/": `http://127.0.0.1:${process.env.BACKEND_PORT || "3000"}`,

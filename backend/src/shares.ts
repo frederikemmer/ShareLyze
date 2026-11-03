@@ -1,4 +1,4 @@
-import { Router, type RequestHandler } from "express";
+import { Router, type Request, type RequestHandler } from "express";
 import type Database from "better-sqlite3";
 import { randomUUID } from "node:crypto";
 import { basename } from "node:path";
@@ -18,6 +18,7 @@ import {
   openSourceFile,
 } from "./storage";
 import { parseRange } from "./range";
+import { visitorDetails } from "./analytics";
 
 type Source = { id: string; name: string; root: string };
 type Item = {
@@ -94,6 +95,7 @@ export function sharesRouter(
       .get(hashSessionToken(token), share.id, new Date().toISOString());
   };
   const event = (
+    req: Request,
     share: Share,
     type: string,
     itemId?: string,
@@ -101,7 +103,7 @@ export function sharesRouter(
   ) =>
     db
       .prepare(
-        "INSERT INTO events(link_id,share_id,item_id,type,created_at,file_path) VALUES (?,?,?,?,?,?)",
+        "INSERT INTO events(link_id,share_id,item_id,type,created_at,file_path,ip_address,user_agent,referrer_origin) VALUES (?,?,?,?,?,?,?,?,?)",
       )
       .run(
         share.link_id,
@@ -110,6 +112,7 @@ export function sharesRouter(
         type,
         new Date().toISOString(),
         filePath ?? null,
+        ...visitorDetails(req),
       );
   router.get("/api/sources", admin, (_req, res) => {
     res.json({
@@ -147,6 +150,7 @@ export function sharesRouter(
   });
   router.get("/api/analytics", admin, (_req, res) => {
     res.json({
+      recent: db.prepare("SELECT e.id,e.created_at,e.type,l.slug,e.ip_address,e.user_agent,e.referrer_origin FROM events e JOIN links l ON l.id=e.link_id ORDER BY e.id DESC LIMIT 200").all(),
       totals: db
         .prepare(
           "SELECT type, count(*) AS count FROM events GROUP BY type ORDER BY type",
@@ -461,7 +465,7 @@ export function sharesRouter(
       res.status(404).json({ error: "Not found" });
       return;
     }
-    event(share, "view");
+    event(req, share, "view");
     if (!granted(share, req.headers.cookie)) {
       res.json({ locked: true });
       return;
@@ -574,7 +578,7 @@ export function sharesRouter(
       return;
     }
     try {
-      event(share, "download_start", target.item.id, sub);
+      event(req, share, "download_start", target.item.id, sub);
     } catch (error) {
       closeSync(fd);
       throw error;
@@ -606,7 +610,7 @@ export function sharesRouter(
       stream.destroy();
     });
     res.on("finish", () => {
-      if (!changed) event(share, "transfer_finished", target.item.id, sub);
+      if (!changed) event(req, share, "transfer_finished", target.item.id, sub);
     });
     stream.pipe(res);
   });
@@ -724,10 +728,10 @@ export function sharesRouter(
       "Content-Type": "application/zip",
       "Content-Disposition": 'attachment; filename="sharelyze.zip"',
     });
-    event(share, "zip_start");
+    event(req, share, "zip_start");
     zip.outputStream.on("error", () => res.destroy());
     res.on("close", releaseZip);
-    res.on("finish", () => event(share, "zip_finished"));
+    res.on("finish", () => event(req, share, "zip_finished"));
     zip.outputStream.pipe(res);
     zip.end({ forceZip64Format: true, comment: "" });
   });

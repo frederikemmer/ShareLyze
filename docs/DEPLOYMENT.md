@@ -51,3 +51,5 @@ docker compose cp sharelyze:/data/sharelyze-backup-2026-11-02.db ./sharelyze-bac
 Protect backups as sensitive data. Also back up your Compose configuration, `.env`, and source data separately. The backup above remains in the volume; remove it only when you have confirmed your copy and no longer need it.
 
 To restore, stop the service, preserve the existing volume/database first, and restore the backup into a separate volume or copy as `sharelyze.db` while no application process is accessing it. Do not reuse stale `-wal` or `-shm` files with the restored database. Start the service and verify the admin, sources and shares. Backup and restoration to a separate test volume were verified with an admin login and restored link; rehearse the procedure for your own deployment before relying on it.
+
+Analytics stores visitor IP addresses, user-agent strings and referrer origins for the configured retention period (30 days by default). Configure trusted proxies correctly or addresses can be inaccurate or spoofed. Review the privacy notice and applicable requirements for your deployment. Location is not resolved.

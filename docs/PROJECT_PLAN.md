@@ -49,8 +49,8 @@ Zielplattform ist unter anderem ein UGREEN NAS mit Docker Compose und Reverse Pr
 - Aufrufe pro Freigabe und Kurzlink sowie Downloads je Freigabe und Datei erfassen; zeitliche Auswertung ermöglichen. Für allgemeine Kurzlinks Weiterleitungen gesondert zählen.
 - Ereignisse eindeutig definieren: Seitenaufruf, Weiterleitung, Downloadstart und soweit beobachtbar serverseitig abgeschlossene Übertragung. Letzteres beweist nicht, dass der Empfänger eine Datei gespeichert oder geöffnet hat. Range-Requests, Wiederaufnahmen, Bots und wiederholte Anfragen nicht als eindeutige Personen ausgeben.
 - Ein ZIP-Abschluss ist zunächst ein Ereignis für das Archiv; daraus nicht automatisch abgeschlossene Einzeldownloads jeder enthaltenen Datei ableiten.
-- Standardmäßig keine externen Tracker, Besucher-Tracking-Cookies oder IP-Adressen in Analytics. Aufbewahrung konfigurierbar und automatische Bereinigung. Protokolle von App und Reverse Proxy gesondert betrachten.
-- Land, Referrer, Gerät und Browser nur als spätere optionale Erweiterung und nach gesonderter Datenschutzbewertung. Konkrete Standard-Aufbewahrungsdauer ist noch zu entscheiden.
+- Keine externen Tracker oder Besucher-Tracking-Cookies. Auf Nutzerwunsch werden IP-Adresse, User-Agent und die Herkunfts-Domain pro Ereignis gespeichert; Aufbewahrung konfigurierbar und automatische Bereinigung. Protokolle von App und Reverse Proxy gesondert betrachten.
+- Standortermittlung benötigt eine zusätzliche Geo-IP-Datenquelle und ist noch offen. Geräte- und Browserinformationen stammen aus dem ungeprüften User-Agent. Standard-Aufbewahrung: 30 Tage.
 
 ### Oberflächen und Design
 
@@ -180,3 +180,34 @@ Der Abschlussabgleich mit konkreten Auditbefunden, Korrekturen und Prüfgrenzen 
 - Nutzer meldet beim NAS-Start `SQLITE_CANTOPEN`. Eine fehlende Schreib-/Traverseberechtigung für UID/GID 1000 auf dem nach `/data` gemounteten Host-Verzeichnis ist eine naheliegende Ursache; der tatsächliche Mount, Berechtigungen und andere mögliche Ursachen wurden noch nicht auf dem NAS geprüft. Eine Diagnoseanleitung steht in `docs/DEPLOYMENT.md`.
 - Containerstart ergänzt: `PUID`/`PGID` (Standard 1000:1000) setzen Besitz des dedizierten `/data`-Ordners und der Standard-SQLite-Dateien, danach läuft die App ohne Root. Speicherquellen werden nicht verändert. Bei Rootless-Docker, NAS-ACLs oder anderen Dateisystemen kann `chown` fehlschlagen; individuelles `DB_PATH` und Docker-User-Overrides benötigen angepasste Rechte. Reale NAS-Prüfung und Veröffentlichung des neuen Images stehen aus.
 - Isolierter Linux-Docker-Test mit zunächst root-eigenem Volume und vorhandener SQLite-Datei: Start mit UID 1234/GID 1235 erfolgreich, HTTP 200, Verzeichnis und Datenbank unter diesen IDs, Hauptprozess ebenfalls; ungültige PUID abgewiesen. Ein echter NAS-Bind-Mount und NAS-ACLs wurden dabei nicht geprüft.
+
+### Abrufdetails (3. November 2026)
+
+- Auf ausdrücklichen Nutzerwunsch speichern neue Ereignisse IP-Adresse, gekürzten User-Agent und gegebenenfalls ausschließlich den Ursprung des Referrers. Die Statistik zeigt die letzten 200 Ereignisse; bestehende Ereignisse haben keine rückwirkenden Details. SQLite-Migration 6 ergänzt die Felder; die vorhandene Aufbewahrungsfrist gilt auch für sie. IP-Adressen hängen von der korrekten Konfiguration vertrauenswürdiger Proxys ab. User-Agent und Referrer sind manipulierbar oder fehlen.
+- Standort und präzise Geräte-/Browsererkennung sind nicht implementiert; eine grobe Erkennung aus dem User-Agent wird angezeigt; dafür wären zusätzliche Daten beziehungsweise Auswertung nötig. Datenschutzrechtliche Bewertung und gegebenenfalls Hinweise für Besucher stehen aus. Build und 23 automatisierte Tests wurden auf dem ARM64-Entwicklungs-Pi nach Installation von Node.js 24 erfolgreich ausgeführt; ein Docker-Daemonzugriff war dort nicht verfügbar.
+
+### Entwicklungsstart auf dem Pi (3. November 2026)
+
+- Node.js 24.22.2 benutzerspezifisch unter `~/.local/opt` installiert und über `~/.local/bin` verfügbar gemacht; `npm ci`, Build und 23 Tests erfolgreich. Der Entwicklungsserver startete lokal auf den Ports 5173 und 3000 und wurde nach dem Test beendet. Der Test für die Datenbankversion wurde auf Migration 6 aktualisiert.
+
+### Lokaler Netzwerkzugriff (3. November 2026)
+
+- Der Entwicklungsstart bindet Vite standardmäßig an alle IPv4-Schnittstellen; die API bleibt an Loopback gebunden. Beim Start werden Hostname, `.local`-Name und vorhandene IPv4-Adressen für Vite und die Origin-Prüfung freigegeben und ausgegeben. Änderungen an Netzwerkadressen erfordern einen Neustart. `FRONTEND_HOST=127.0.0.1` beschränkt Vite auf den Rechner. Produktions-Origin-Regeln bleiben unverändert.
+- Build und 24 Tests bestanden. Isolierter Test auf alternativen Ports: Frontend über Hostheader `dev-pi.local` HTTP 200 und Einrichtung über denselben Origin HTTP 201; Namensauflösung von einem anderen Gerät und Firewall wurden nicht geprüft. Der bestehende Prozess auf Port 5173 wurde nicht verändert und muss für die Änderung neu gestartet werden. Entwicklungs-HTTP nur in vertrauenswürdigen Netzen einsetzen.
+
+### Freigabenfilter (3. November 2026)
+
+- Zusätzliche Überschrift „Alle Datenfreigaben“ entfernt; Statusfilter und Suche stehen bei ausreichender Breite nebeneinander und umbrechen bei Platzmangel. Visueller Browsertest steht aus.
+
+### Kurznamen kopieren (3. November 2026)
+
+- Kurznamen in Freigabe- und Kurzlinkübersicht als kompakte Schaltflächen gestaltet; ein Klick kopiert die vollständige konfigurierte Linkadresse und zeigt die vorhandene Rückmeldung. Die Öffnen- und Kopieren-Aktionen bleiben verfügbar. Visueller und interaktiver Browsertest steht aus.
+
+### Lokale Testquelle (3. November 2026)
+
+- Der lokale Entwicklungsstart erstellt bei fehlendem `SOURCES_JSON` das Git-ignorierte Verzeichnis `.local-test-files/` im Repository und bindet es als Quelle „Lokale Testdateien“ ein. Inhalte bleiben zwischen Starts erhalten und werden nicht automatisch gelöscht. Eine explizite `SOURCES_JSON`-Konfiguration ersetzt die Vorgabe; Produktiv- und Docker-Konfiguration bleiben unverändert.
+- Geprüft: Build und Git-Ignore-Regel; isolierter Entwicklungsstart mit separater Datenbank lieferte die Testquelle über die authentifizierte Quellen-API. Ein explizites `SOURCES_JSON` wird laut Startlogik unverändert übernommen; ein separater Lauf dafür steht aus.
+
+### Kurzlinkliste (3. November 2026)
+
+- Spaltenüberschrift der Freigabeliste auf „Freigabe“ verkürzt. Kurzlinkliste zeigt Zieladresse vor Kurzname, hebt die gekürzte Zieladresse hervor und entfernt das Zeilensymbol; der Kurzname behält dieselbe Kopier-Schaltfläche wie bei Freigaben. Visueller Nachtest steht aus.

@@ -678,18 +678,7 @@ function App() {
               <div className="row">
                 <h1>Datenfreigabe</h1>
               </div>
-              <div className="share-list-heading">
-                <h2>Alle Datenfreigaben</h2>
-                <label className="search-field compact-field">
-                  <span>Freigaben suchen</span>
-                  <input
-                    type="search"
-                    value={shareQuery}
-                    onChange={(e) => setShareQuery(e.target.value)}
-                    placeholder="Titel oder Kurzname"
-                  />
-                </label>
-              </div>
+              <div className="share-toolbar">
               <div
                 className="share-filters"
                 role="group"
@@ -723,8 +712,18 @@ function App() {
                   </button>
                 ))}
               </div>
+                <label className="search-field compact-field">
+                  <span>Freigaben suchen</span>
+                  <input
+                    type="search"
+                    value={shareQuery}
+                    onChange={(e) => setShareQuery(e.target.value)}
+                    placeholder="Titel oder Kurzname"
+                  />
+                </label>
+              </div>
               <div className="share-table-heading" aria-hidden="true">
-                <span>Datei / Freigabe</span>
+                <span>Freigabe</span>
                 <span>Kurzname</span>
                 <span>Status</span>
                 <span>Downloadstarts</span>
@@ -751,7 +750,10 @@ function App() {
                           </a>
                         </div>
                       </div>
-                      <span className="share-slug">/{s.slug}</span>
+                      <button type="button" className="share-slug" title="Link kopieren" aria-label={`Link /${s.slug} kopieren`} onClick={() => void run(async () => {
+                        await navigator.clipboard.writeText(`${savedLinkOrigin}/${s.slug}`);
+                        setNotice("Link kopiert.");
+                      })}>/{s.slug}</button>
                       <span
                         className={
                           shareStatus(s) === "active"
@@ -1140,8 +1142,8 @@ function App() {
                 className="share-table-heading link-table-heading"
                 aria-hidden="true"
               >
-                <span>Kurzname</span>
                 <span>Zieladresse</span>
+                <span>Kurzname</span>
                 <span>Status</span>
                 <span>Weiterleitungen</span>
                 <span>Aktionen</span>
@@ -1150,17 +1152,13 @@ function App() {
                 {visibleLinks.map((l) => (
                   <li key={l.id}>
                     <div className="managed-row share-table-row link-table-row">
-                      <div className="managed-identity">
-                        <span className="item-icon">
-                          <Link2 size={16} aria-hidden="true" />
-                        </span>
-                        <div>
-                          <a href={`/${l.slug}`}>/{l.slug}</a>
-                        </div>
-                      </div>
                       <span className="link-target" title={l.target_url}>
                         {l.target_url}
                       </span>
+                      <button type="button" className="share-slug" title="Link kopieren" aria-label={`Link /${l.slug} kopieren`} onClick={() => void run(async () => {
+                        await navigator.clipboard.writeText(`${savedLinkOrigin}/${l.slug}`);
+                        setNotice("Link kopiert.");
+                      })}>/{l.slug}</button>
                       <span
                         className={
                           l.active ? "status-badge active" : "status-badge"
