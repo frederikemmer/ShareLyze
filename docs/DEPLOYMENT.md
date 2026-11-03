@@ -6,7 +6,7 @@ ShareLyze has not yet completed its security review or UGREEN/Zoraxy validation.
 
 [`docker-compose.nas.yml`](../docker-compose.nas.yml) is a MediaLyze-style example for a pre-existing external `docker_bridge` network. Copy `.env.example` to `.env`, set `PUBLIC_ORIGIN` (for example `https://s.fe-server.de`) and a random `SETUP_TOKEN`, and keep `.env` private. Set `HOST_PORT`, `CONFIG_HOST_DIR`, `MEDIATHEK_HOST_DIR` and `FE_HOST_DIR` in `.env` if the example paths or port do not match your NAS. Verify those paths exist; use isolated test folders first. Edit the mounts and matching `SOURCES_JSON` together if your sources differ. Sources are mounted read-only. No upload directory is required: ShareLyze currently shares existing files and does not accept file uploads.
 
-The image runs as the `node` user (UID/GID 1000), which needs write permission on the host config directory mounted at `/data`, and read and traversal permission on every source and its parent directories. There is currently no PUID/PGID setting. Confirm and arrange permissions for your NAS without broadly opening access. The external network must already exist; if the proxy is not on it, adjust the network accordingly. The default `8080:3000` publishes on all host interfaces and can conflict with MediaLyze; choose a free `HOST_PORT` and restrict access with your firewall. Alternatively, use the container's name and port 3000 from a proxy on the same Docker network and omit the published port.
+The container starts as root only to prepare the dedicated `/data` directory and existing default SQLite files for `PUID`/`PGID` (default 1000:1000), then runs the application under those IDs. It does not change the mounted source directories. Set both IDs to a non-zero numeric account that can read and traverse the sources. Docker user overrides bypass this preparation; a custom `DB_PATH` outside the default requires separately prepared permissions. Read-only mounts, NAS ACLs, rootless Docker or network filesystems may prevent automatic ownership changes. The external network must already exist; if the proxy is not on it, adjust the network accordingly. The default `8080:3000` publishes on all host interfaces and can conflict with MediaLyze; choose a free `HOST_PORT` and restrict access with your firewall. Alternatively, use the container's name and port 3000 from a proxy on the same Docker network and omit the published port.
 
 Point Zoraxy or another HTTPS proxy to the ShareLyze container on port 3000, or to the chosen NAS host port, and forward the original Host and protocol. Set `TRUSTED_PROXIES` only after determining the proxy's actual stable IP/CIDR; do not guess or trust all clients. `PUBLIC_ORIGIN` must match the public admin URL. The `ghcr.io/frederikemmer/sharelyze:dev` image must exist and be accessible before the following command can pull it; this has not yet been established for this project:
 
@@ -25,6 +25,17 @@ For a local image built from this checkout, substitute that image in the NAS Com
 4. Open `PUBLIC_ORIGIN` and supply the setup token, admin username and password. Keep the token for container restarts; setup is disabled after the first admin exists.
 
 The settings page can store a public link address used when copying links. Configure DNS and your reverse proxy separately. This setting does not change `PUBLIC_ORIGIN`, which remains the trusted origin for the admin interface; update that environment variable and restart the service if the admin address changes. Use HTTPS except for local loopback testing.
+
+### SQLite cannot open the database
+
+`SQLITE_CANTOPEN` during startup can mean that the process cannot write to the directory mounted at `/data`. Inspect the actual mount and numeric permissions on the NAS rather than assuming the relative Compose path:
+
+```sh
+docker inspect sharelyze --format '{{range .Mounts}}{{println .Destination "<-" .Source}}{{end}}'
+ls -ldn /path/reported/for/data
+```
+
+The application runs as `PUID`/`PGID`, defaulting to 1000:1000, and needs write and directory traversal access to the mounted directory and its database files. Current images attempt to set ownership on startup; check that the updated image is in use and inspect logs for ownership errors. For an existing database, preserve and back up the data before changing permissions. Read-only filesystems, full disks, unavailable mounts and ACLs can also cause this error. Never use a source-data folder as the writable config directory.
 
 Source IDs are persistent: removing a source from the configuration disables it, and changing a root used by a share prevents startup. A read-only mount does not stop another process or NAS user from changing the source files. Directory shares expose later additions. Directory browsing is limited to 10,000 entries per directory, ZIP creation to 10,000 entries and 50 levels; pagination is not implemented. Simultaneous file streams are limited to 32 and ZIP streams to three as resource safeguards. These are not per-share download quotas.
 
