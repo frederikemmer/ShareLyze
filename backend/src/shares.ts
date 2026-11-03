@@ -143,7 +143,7 @@ export function sharesRouter(
     res.json({
       shares: db
         .prepare(
-          "SELECT s.id,s.title,s.active,s.expires_at,s.password_hash IS NOT NULL AS has_password,s.created_at,l.slug FROM shares s JOIN links l ON l.share_id=s.id ORDER BY s.created_at DESC",
+          "SELECT s.id,s.title,s.description,s.active,s.expires_at,s.password_hash IS NOT NULL AS has_password,s.created_at,l.slug FROM shares s JOIN links l ON l.share_id=s.id ORDER BY s.created_at DESC",
         )
         .all(),
     });
@@ -173,18 +173,17 @@ export function sharesRouter(
         .all(),
       files: db
         .prepare(
-          "SELECT l.slug,s.title,i.relative_path,e.file_path,count(*) AS count FROM events e JOIN share_items i ON i.id=e.item_id JOIN shares s ON s.id=e.share_id JOIN links l ON l.id=e.link_id WHERE e.type='download_start' GROUP BY e.link_id,e.share_id,e.item_id,e.file_path ORDER BY count DESC LIMIT 100",
+          "SELECT l.slug,l.slug AS title,i.relative_path,e.file_path,count(*) AS count FROM events e JOIN share_items i ON i.id=e.item_id JOIN shares s ON s.id=e.share_id JOIN links l ON l.id=e.link_id WHERE e.type='download_start' GROUP BY e.link_id,e.share_id,e.item_id,e.file_path ORDER BY count DESC LIMIT 100",
         )
         .all(),
     });
   });
   router.post("/api/shares", admin, async (req, res) => {
-    const { title, slug, password, expiresAt } = req.body ?? {};
+    const { title, slug, password, expiresAt, description } = req.body ?? {};
     const selected = req.body?.items;
     if (
-      typeof title !== "string" ||
-      !title.trim() ||
-      title.length > 150 ||
+      (title !== undefined && (typeof title !== "string" || !title.trim() || title.length > 150)) ||
+      (description !== undefined && (typeof description !== "string" || description.length > 2000)) ||
       !Array.isArray(selected) ||
       !selected.length ||
       selected.length > 500 ||
@@ -241,13 +240,14 @@ export function sharesRouter(
     try {
       db.transaction(() => {
         db.prepare(
-          "INSERT INTO shares(id,title,password_hash,expires_at,created_at) VALUES (?,?,?,?,?)",
+          "INSERT INTO shares(id,title,password_hash,expires_at,created_at,description) VALUES (?,?,?,?,?,?)",
         ).run(
           id,
-          title.trim(),
+          title?.trim() || short,
           hash,
           expiresAt ? new Date(expiresAt).toISOString() : null,
           new Date().toISOString(),
+          description?.trim() || null,
         );
         const insert = db.prepare(
           "INSERT INTO share_items(id,share_id,source_id,relative_path,kind) VALUES (?,?,?,?,?)",
@@ -285,9 +285,10 @@ export function sharesRouter(
       res.status(404).json({ error: "Not found" });
       return;
     }
-    const { active, title, expiresAt, password, slug } = req.body ?? {};
+    const { active, title, expiresAt, password, slug, description } = req.body ?? {};
     const selected = req.body?.items;
     if (
+      (description !== undefined && (typeof description !== "string" || description.length > 2000)) ||
       (active !== undefined && typeof active !== "boolean") ||
       (title !== undefined &&
         (typeof title !== "string" || !title.trim() || title.length > 150)) ||
@@ -359,7 +360,7 @@ export function sharesRouter(
     try {
       db.transaction(() => {
         db.prepare(
-          "UPDATE shares SET title=?,active=?,expires_at=?,password_hash=? WHERE id=?",
+          "UPDATE shares SET title=?,active=?,expires_at=?,password_hash=?,description=COALESCE(?,description) WHERE id=?",
         ).run(
           title === undefined ? old.title : title.trim(),
           active === undefined ? old.active : active ? 1 : 0,
@@ -369,6 +370,7 @@ export function sharesRouter(
               ? null
               : new Date(expiresAt).toISOString(),
           hash,
+          description === undefined ? null : description.trim(),
           req.params.id,
         );
         if (normalized !== undefined)
@@ -472,7 +474,7 @@ export function sharesRouter(
     }
     res.json({
       locked: false,
-      title: share.title,
+      title: String(req.params.slug),
       items: items(share.id).map((i) => ({
         id: i.id,
         name: i.relative_path

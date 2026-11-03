@@ -211,3 +211,8 @@ Der Abschlussabgleich mit konkreten Auditbefunden, Korrekturen und Prüfgrenzen 
 ### Kurzlinkliste (3. November 2026)
 
 - Spaltenüberschrift der Freigabeliste auf „Freigabe“ verkürzt. Kurzlinkliste zeigt Zieladresse vor Kurzname, hebt die gekürzte Zieladresse hervor und entfernt das Zeilensymbol; der Kurzname behält dieselbe Kopier-Schaltfläche wie bei Freigaben. Visueller Nachtest steht aus.
+
+### Freigaben ohne Titel (3. November 2026)
+
+- Freigaben verwenden den Kurznamen als sichtbaren Namen; optional bearbeitbare Beschreibungen werden mit Migration 7 gespeichert. Das bisherige Titelfeld bleibt intern für Kompatibilität bestehender Daten erhalten. Öffentliche Freigaben zeigen den Kurznamen. Bearbeitung erfolgt inline; Kopieren und Bearbeiten sind Icon-Schaltflächen, Aktivierung erfolgt über Schalter. Download- und Ablaufangaben nutzen Symbole.
+- Build und 24 Tests erfolgreich; visuelle, interaktive und migrationsspezifische Prüfung steht aus.

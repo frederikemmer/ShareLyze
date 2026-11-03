@@ -1227,3 +1227,12 @@ input:invalid:not(:placeholder-shown) {
 
 .visitor-event { padding: 12px 0; border-bottom: 1px solid var(--border, #8885); overflow-wrap: anywhere; }
 .visitor-event div { margin-top: 4px; }
+
+#freigaben .share-table-heading, #freigaben .managed-row.share-table-row { grid-template-columns: minmax(170px,2fr) minmax(90px,.8fr) minmax(95px,.8fr) minmax(100px,.8fr) minmax(165px,auto); }
+.share-stat, .share-expiry, .link-stat { display: inline-flex; align-items: center; gap: 5px; }
+.toggle-switch { padding: 3px; background: transparent; box-shadow: none; }
+.switch-track { display: block; width: 34px; height: 20px; border-radius: 12px; background: #aaa; position: relative; }
+.switch-track::after { content: ""; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: white; transition: transform .15s; }
+.toggle-switch[aria-checked="true"] .switch-track { background: #1b8175; }
+.toggle-switch[aria-checked="true"] .switch-track::after { transform: translateX(14px); }
+@media (max-width: 900px) { .share-stat::before, .share-expiry::before, .link-stat::before { content: none; } }

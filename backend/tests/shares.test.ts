@@ -135,7 +135,7 @@ describe("share HTTP flow", () => {
         .expect(200);
       expect(whole.body.toString()).toBe("abcdefghij");
       const statistics = await request(app).get('/api/analytics').set('Cookie',admin).expect(200);
-      expect(statistics.body.files).toEqual(expect.arrayContaining([expect.objectContaining({slug:'photos',title:'Photos',file_path:'one.txt',count:2})]));
+      expect(statistics.body.files).toEqual(expect.arrayContaining([expect.objectContaining({slug:'photos',title:'photos',file_path:'one.txt',count:2})]));
       await request(app)
         .get(`/api/public/photos/items/${item}/download?path=one.txt`)
         .set("Cookie", grant)

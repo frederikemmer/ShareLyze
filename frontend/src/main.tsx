@@ -5,7 +5,7 @@ import { Statistics, type Analytics } from "./Statistics";
 import { version } from "../../package.json";
 import {
   BarChart3,
-  Copy,
+  Copy, Pencil, Download, CalendarDays,
   Eye,
   File,
   Folder,
@@ -24,6 +24,7 @@ type Share = {
   id: string;
   title: string;
   slug: string;
+  description: string | null;
   active: number;
   expires_at: string | null;
   has_password: number;
@@ -74,7 +75,7 @@ function ShareEditor({
   selection: Item[];
   onSave: (payload: Record<string, unknown>) => Promise<boolean>;
 }) {
-  const [title, setTitle] = useState(share.title),
+  const [description, setDescription] = useState(share.description ?? ""),
     [slug, setSlug] = useState(share.slug),
     [expiry, setExpiry] = useState(
       share.expires_at
@@ -93,13 +94,12 @@ function ShareEditor({
     setReplace(false);
   }, [selection]);
   return (
-    <details>
-      <summary>Bearbeiten</summary>
-      <form
+    <>
+      <form className="inline-editor"
         onSubmit={(e) => {
           e.preventDefault();
           const payload: Record<string, unknown> = {
-            title,
+            description,
             slug,
             expiresAt: expiry ? new Date(expiry).toISOString() : null,
           };
@@ -115,14 +115,7 @@ function ShareEditor({
           });
         }}
       >
-        <label className="compact-field">
-          <span>Titel</span>
-          <input
-            required
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-          />
-        </label>
+        <label className="compact-field"><span>Beschreibung (optional)</span><input value={description} maxLength={2000} onChange={(e) => setDescription(e.target.value)} /></label>
         <label className="compact-field">
           <span>Kurzname</span>
           <input
@@ -172,7 +165,7 @@ function ShareEditor({
         {replace && (
           <div>
             <p>
-              Diese Elemente ersetzen den bisherigen Inhalt von „{share.title}“:
+              Diese Elemente ersetzen den bisherigen Inhalt von „{share.slug}“:
             </p>
             <ul>
               {selection.map((item, index) => (
@@ -186,7 +179,7 @@ function ShareEditor({
         )}
         <button>Änderungen speichern</button>
       </form>
-    </details>
+    </>
   );
 }
 function App() {
@@ -205,7 +198,7 @@ function App() {
     [selected, setSelected] = useState<Item[]>([]),
     [shares, setShares] = useState<Share[]>([]),
     [links, setLinks] = useState<Link[]>([]),
-    [title, setTitle] = useState(""),
+    [description, setDescription] = useState(""),
     [slug, setSlug] = useState(""),
     [sharePassword, setSharePassword] = useState(""),
     [expires, setExpires] = useState(""),
@@ -214,6 +207,7 @@ function App() {
   const [shareQuery, setShareQuery] = useState(""),
     [linkQuery, setLinkQuery] = useState(""),
     [entryQuery, setEntryQuery] = useState(""),
+    [editingShare, setEditingShare] = useState<string | null>(null),
     [editingLink, setEditingLink] = useState<string | null>(null),
     [editUrl, setEditUrl] = useState(""),
     [editSlug, setEditSlug] = useState("");
@@ -382,7 +376,7 @@ function App() {
   const visibleShares = shares.filter(
     (s) =>
       (shareFilter === "all" || shareStatus(s) === shareFilter) &&
-      `${s.title} ${s.slug}`
+      `${s.slug}`
         .toLocaleLowerCase("de")
         .includes(normalized(shareQuery)),
   );
@@ -718,12 +712,11 @@ function App() {
                     type="search"
                     value={shareQuery}
                     onChange={(e) => setShareQuery(e.target.value)}
-                    placeholder="Titel oder Kurzname"
+                    placeholder="Kurzname"
                   />
                 </label>
               </div>
               <div className="share-table-heading" aria-hidden="true">
-                <span>Freigabe</span>
                 <span>Kurzname</span>
                 <span>Status</span>
                 <span>Downloadstarts</span>
@@ -734,22 +727,6 @@ function App() {
                 {visibleShares.map((s) => (
                   <li key={s.id}>
                     <div className="managed-row share-table-row">
-                      <div className="managed-identity">
-                        <span className="item-icon">
-                          <Share2 size={16} aria-hidden="true" />
-                        </span>
-                        <div>
-                          <a href={`/${s.slug}`}>
-                            {s.has_password ? (
-                              <LockKeyhole
-                                size={13}
-                                aria-label="Passwortgeschützt"
-                              />
-                            ) : null}{" "}
-                            {s.title}
-                          </a>
-                        </div>
-                      </div>
                       <button type="button" className="share-slug" title="Link kopieren" aria-label={`Link /${s.slug} kopieren`} onClick={() => void run(async () => {
                         await navigator.clipboard.writeText(`${savedLinkOrigin}/${s.slug}`);
                         setNotice("Link kopiert.");
@@ -771,12 +748,12 @@ function App() {
                         className="share-stat"
                         title="Downloadstarts einschließlich fortgesetzter Anfragen"
                       >
-                        {analytics?.links.find(
+                        <Download size={15} aria-label="Downloadstarts" /> {analytics?.links.find(
                           (x) =>
                             x.slug === s.slug && x.type === "download_start",
                         )?.count ?? 0}
                       </span>
-                      <span className="share-expiry">
+                      <span className="share-expiry" title="Ablauf"><CalendarDays size={15} aria-label="Ablauf" />
                         {s.expires_at
                           ? new Date(s.expires_at).toLocaleDateString("de-DE")
                           : "Unbegrenzt"}
@@ -785,14 +762,14 @@ function App() {
                         <a
                           className="share-action"
                           href={`/${s.slug}`}
-                          aria-label={`${s.title} öffnen`}
+                          aria-label={`Freigabe ${s.slug} öffnen`}
                           title="Freigabe öffnen"
                         >
                           <Eye size={16} aria-hidden="true" />
                         </a>
                         <button
                           type="button"
-                          className="plain small-action"
+                          className="plain small-action" title="Link kopieren" aria-label="Link kopieren"
                           onClick={() =>
                             void run(async () => {
                               await navigator.clipboard.writeText(
@@ -802,11 +779,10 @@ function App() {
                             })
                           }
                         >
-                          <Copy size={14} aria-hidden="true" />{" "}
-                          <span>Kopieren</span>
+                          <Copy size={16} aria-hidden="true" />
                         </button>
                         <button
-                          className="plain"
+                          type="button" role="switch" aria-checked={!!s.active} aria-label="Freigabe aktivieren" className="toggle-switch"
                           onClick={() =>
                             void run(async () => {
                               await api(`/api/shares/${s.id}`, {
@@ -817,11 +793,12 @@ function App() {
                             })
                           }
                         >
-                          {s.active ? "Deaktivieren" : "Aktivieren"}
+                          <span className="switch-track" aria-hidden="true" />
                         </button>
+                        <button type="button" className="plain" title="Bearbeiten" aria-label="Freigabe bearbeiten" aria-expanded={editingShare === s.id} onClick={() => setEditingShare(editingShare === s.id ? null : s.id)}><Pencil size={16} /></button>
                       </div>
                     </div>
-                    <ShareEditor
+                    {editingShare === s.id && <ShareEditor
                       share={s}
                       selection={selected}
                       onSave={async (payload) => {
@@ -832,6 +809,7 @@ function App() {
                             body: JSON.stringify(payload),
                           });
                           await refresh();
+                          setEditingShare(null);
                           return true;
                         } catch (e) {
                           setError(
@@ -842,7 +820,7 @@ function App() {
                           return false;
                         }
                       }}
-                    />
+                    />}
                   </li>
                 ))}
                 {visibleShares.length === 0 && (
@@ -1035,7 +1013,7 @@ function App() {
                     e.preventDefault();
                     void run(async () => {
                       await post("/api/shares", {
-                        title,
+                        description,
                         slug,
                         items: selected,
                         ...(sharePassword ? { password: sharePassword } : {}),
@@ -1044,7 +1022,7 @@ function App() {
                           : {}),
                       });
                       setSelected([]);
-                      setTitle("");
+                      setDescription("");
                       setSlug("");
                       setSharePassword("");
                       setExpires("");
@@ -1052,14 +1030,7 @@ function App() {
                     });
                   }}
                 >
-                  <label className="compact-field">
-                    <span>Titel</span>
-                    <input
-                      required
-                      value={title}
-                      onChange={(e) => setTitle(e.target.value)}
-                    />
-                  </label>
+                  <label className="compact-field"><span>Beschreibung (optional)</span><input value={description} maxLength={2000} onChange={(e) => setDescription(e.target.value)} /></label>
                   <label className="compact-field">
                     <span>Eigener Kurzname (optional)</span>
                     <input
@@ -1170,7 +1141,7 @@ function App() {
                         className="link-stat"
                         title="Gezählte Weiterleitungen innerhalb der Aufbewahrungsdauer"
                       >
-                        {analytics?.links.find(
+                        <BarChart3 size={15} aria-label="Weiterleitungen" /> {analytics?.links.find(
                           (x) => x.slug === l.slug && x.type === "redirect",
                         )?.count ?? 0}
                       </span>
@@ -1185,7 +1156,7 @@ function App() {
                         </a>
                         <button
                           type="button"
-                          className="plain small-action"
+                          className="plain small-action" title="Link kopieren" aria-label="Link kopieren"
                           onClick={() =>
                             void run(async () => {
                               await navigator.clipboard.writeText(
@@ -1195,10 +1166,10 @@ function App() {
                             })
                           }
                         >
-                          <Copy size={14} aria-hidden="true" /> Kopieren
+                          <Copy size={16} aria-hidden="true" />
                         </button>
                         <button
-                          className="plain"
+                          type="button" role="switch" aria-checked={!!l.active} aria-label="Kurzlink aktivieren" className="toggle-switch"
                           onClick={() =>
                             void run(async () => {
                               await api(`/api/links/${l.id}`, {
@@ -1209,11 +1180,11 @@ function App() {
                             })
                           }
                         >
-                          {l.active ? "Deaktivieren" : "Aktivieren"}
+                          <span className="switch-track" aria-hidden="true" />
                         </button>
                         <button
                           className="plain"
-                          aria-expanded={editingLink === l.id}
+                          title="Bearbeiten" aria-label="Kurzlink bearbeiten" aria-expanded={editingLink === l.id}
                           aria-controls={`link-editor-${l.id}`}
                           onClick={() => {
                             if (editingLink === l.id) setEditingLink(null);
@@ -1224,7 +1195,7 @@ function App() {
                             }
                           }}
                         >
-                          Bearbeiten
+                          <Pencil size={16} aria-hidden="true" />
                         </button>
                       </div>
                     </div>

@@ -45,7 +45,7 @@ describe("HTTP range parser", () => {
 describe("database migration", () => {
   it("creates constrained tables and refuses links with two targets", () => {
     const db = openDatabase(":memory:");
-    expect(db.pragma("user_version", { simple: true })).toBe(6);
+    expect(db.pragma("user_version", { simple: true })).toBe(7);
     expect(() =>
       db
         .prepare(
