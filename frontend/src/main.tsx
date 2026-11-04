@@ -732,19 +732,23 @@ function App() {
                         await navigator.clipboard.writeText(`${savedLinkOrigin}/${s.slug}`);
                         setNotice("Link kopiert.", `share:${s.id}`);
                       })}>/{s.slug}</button>
-                      <span
-                        className={
-                          shareStatus(s) === "active"
-                            ? "status-badge active"
-                            : "status-badge"
-                        }
-                      >
-                        {shareStatus(s) === "active"
-                          ? "Aktiv"
-                          : shareStatus(s) === "expired"
-                            ? "Abgelaufen"
-                            : "Deaktiviert"}
-                      </span>
+                      <div className="status-control">
+                        <button
+                          type="button" role="switch" aria-checked={!!s.active} aria-label={`Freigabe /${s.slug} aktivieren`} className="toggle-switch"
+                          onClick={() =>
+                            void run(async () => {
+                              await api(`/api/shares/${s.id}`, {
+                                method: "PATCH",
+                                body: JSON.stringify({ active: !s.active }),
+                              });
+                              await refresh();
+                            })
+                          }
+                        >
+                          <span className="switch-track" aria-hidden="true" />
+                        </button>
+                        {shareStatus(s) === "expired" && <span className="expired-indicator" title="Abgelaufen" aria-label="Abgelaufen">!</span>}
+                      </div>
                       <span
                         className="share-stat"
                         title="Downloadstarts einschließlich fortgesetzter Anfragen"
@@ -781,20 +785,6 @@ function App() {
                           }
                         >
                           <Copy size={16} aria-hidden="true" />
-                        </button>
-                        <button
-                          type="button" role="switch" aria-checked={!!s.active} aria-label="Freigabe aktivieren" className="toggle-switch"
-                          onClick={() =>
-                            void run(async () => {
-                              await api(`/api/shares/${s.id}`, {
-                                method: "PATCH",
-                                body: JSON.stringify({ active: !s.active }),
-                              });
-                              await refresh();
-                            })
-                          }
-                        >
-                          <span className="switch-track" aria-hidden="true" />
                         </button>
                         <button type="button" className="plain" title="Bearbeiten" aria-label="Freigabe bearbeiten" aria-expanded={editingShare === s.id} onClick={() => setEditingShare(editingShare === s.id ? null : s.id)}><Pencil size={16} /></button>
                       </div>
@@ -1131,13 +1121,22 @@ function App() {
                         await navigator.clipboard.writeText(`${savedLinkOrigin}/${l.slug}`);
                         setNotice("Link kopiert.", `link:${l.id}`);
                       })}>/{l.slug}</button>
-                      <span
-                        className={
-                          l.active ? "status-badge active" : "status-badge"
-                        }
-                      >
-                        {l.active ? "Aktiv" : "Deaktiviert"}
-                      </span>
+                      <div className="status-control">
+                        <button
+                          type="button" role="switch" aria-checked={!!l.active} aria-label={`Kurzlink /${l.slug} aktivieren`} className="toggle-switch"
+                          onClick={() =>
+                            void run(async () => {
+                              await api(`/api/links/${l.id}`, {
+                                method: "PATCH",
+                                body: JSON.stringify({ active: !l.active }),
+                              });
+                              await refresh();
+                            })
+                          }
+                        >
+                          <span className="switch-track" aria-hidden="true" />
+                        </button>
+                      </div>
                       <span
                         className="link-stat"
                         title="Gezählte Weiterleitungen innerhalb der Aufbewahrungsdauer"
@@ -1168,20 +1167,6 @@ function App() {
                           }
                         >
                           <Copy size={16} aria-hidden="true" />
-                        </button>
-                        <button
-                          type="button" role="switch" aria-checked={!!l.active} aria-label="Kurzlink aktivieren" className="toggle-switch"
-                          onClick={() =>
-                            void run(async () => {
-                              await api(`/api/links/${l.id}`, {
-                                method: "PATCH",
-                                body: JSON.stringify({ active: !l.active }),
-                              });
-                              await refresh();
-                            })
-                          }
-                        >
-                          <span className="switch-track" aria-hidden="true" />
                         </button>
                         <button
                           className="plain"

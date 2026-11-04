@@ -479,10 +479,7 @@ input:invalid:not(:placeholder-shown) {
 }
 .link-table-heading,
 .managed-row.link-table-row {
-  grid-template-columns: minmax(180px, 2fr) minmax(130px, 1fr) minmax(
-      90px,
-      0.8fr
-    ) minmax(100px, 0.8fr) minmax(220px, auto);
+  grid-template-columns: minmax(180px, 2fr) minmax(130px, 1fr) 64px minmax(100px, 0.8fr) minmax(150px, auto);
 }
 .link-target {
   min-width: 0;
@@ -1228,7 +1225,7 @@ input:invalid:not(:placeholder-shown) {
 .visitor-event { padding: 12px 0; border-bottom: 1px solid var(--border, #8885); overflow-wrap: anywhere; }
 .visitor-event div { margin-top: 4px; }
 
-#freigaben .share-table-heading, #freigaben .managed-row.share-table-row { grid-template-columns: minmax(170px,2fr) minmax(90px,.8fr) minmax(95px,.8fr) minmax(100px,.8fr) minmax(165px,auto); }
+#freigaben .share-table-heading, #freigaben .managed-row.share-table-row { grid-template-columns: minmax(170px,2fr) 64px minmax(95px,.8fr) minmax(100px,.8fr) minmax(150px,auto); }
 .share-stat, .share-expiry, .link-stat { display: inline-flex; align-items: center; gap: 5px; }
 .toggle-switch { padding: 3px; background: transparent; box-shadow: none; }
 .switch-track { display: block; width: 34px; height: 20px; border-radius: 12px; background: #aaa; position: relative; }
@@ -1261,3 +1258,7 @@ input:invalid:not(:placeholder-shown) {
 @media (max-width: 600px) { .notification-host { right: max(10px, env(safe-area-inset-right)); bottom: max(10px, env(safe-area-inset-bottom)); width: min(324px, calc(100vw - 20px)); } }
 @media (prefers-color-scheme: dark) { .notification-card { color: #f1eee7; border-color: rgba(255,255,255,.14); } .notification-card[data-type="success"] { --notification-color: #80dbad; --notification-bg: color-mix(in srgb, #145c43 24%, rgba(46, 43, 39, .96)); } .notification-card[data-type="error"] { --notification-color: #ff9a8d; --notification-bg: color-mix(in srgb, #942f28 24%, rgba(46, 43, 39, .96)); } }
 @media (prefers-reduced-motion: reduce) { .notification-card, .notification-deck, .notification-card > * { animation: none; transition: none; } }
+
+.notification-host:empty { display: none; }
+.status-control { display: inline-flex; align-items: center; gap: 3px; }
+.expired-indicator { color: #a15d00; font-size: .8rem; font-weight: 700; }

@@ -33,7 +33,7 @@ export function Notifications({ entries, dismiss }: { entries: Notification[]; d
   const [focused, setFocused] = useState(false);
   const [hidden, setHidden] = useState(document.hidden);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const host = useRef<HTMLElement>(null);
+  const host = useRef<HTMLDivElement>(null);
   const timers = useRef(new Map<number, { remaining: number; started: number }>());
   const dismissRef = useRef(dismiss);
   dismissRef.current = dismiss;
@@ -75,12 +75,12 @@ export function Notifications({ entries, dismiss }: { entries: Notification[]; d
     groups.set(key, group);
   }
   return <>
-    <section ref={host} className="notification-host" aria-label="Benachrichtigungen"
+    <div ref={host} className="notification-host" role="region" aria-label="Benachrichtigungen"
       onPointerEnter={(event) => { if (event.pointerType !== "touch") setHovered(true); }}
       onPointerLeave={() => setHovered(false)} onFocusCapture={() => setFocused(true)}
       onBlurCapture={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false); }}>
       {[...groups].reverse().map(([key, group]) => <Deck key={key} entries={group} dismiss={dismiss} />)}
-    </section>
+    </div>
     <div className="notification-announcements" role="status" aria-live="polite" aria-relevant="additions">{entries.map((entry) => <p key={entry.id}>{entry.type === "error" ? "Fehler: " : ""}{entry.message}</p>)}</div>
   </>;
 }
