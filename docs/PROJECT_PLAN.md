@@ -216,3 +216,10 @@ Der Abschlussabgleich mit konkreten Auditbefunden, Korrekturen und Prüfgrenzen 
 
 - Freigaben verwenden den Kurznamen als sichtbaren Namen; optional bearbeitbare Beschreibungen werden mit Migration 7 gespeichert. Das bisherige Titelfeld bleibt intern für Kompatibilität bestehender Daten erhalten. Öffentliche Freigaben zeigen den Kurznamen. Bearbeitung erfolgt inline; Kopieren und Bearbeiten sind Icon-Schaltflächen, Aktivierung erfolgt über Schalter. Download- und Ablaufangaben nutzen Symbole.
 - Build und 24 Tests erfolgreich; visuelle, interaktive und migrationsspezifische Prüfung steht aus.
+
+### Benachrichtigungen (4. November 2026)
+
+- Erfolgs- und Fehlermeldungen erscheinen unten rechts als nach Thema gruppierte Notification-Decks mit Soft Fill und der kontrastreichen MediaLyze-Farbpalette. Hover und Tastaturfokus fächern den Stapel auf und pausieren die Ablaufzeit; einzelne Meldungen lassen sich schließen. Reduzierte Bewegung und Dark Mode werden berücksichtigt. Alle Meldungen bleiben 2,5 Sekunden sichtbar; die Karten kürzen lange Texte optisch auf zwei Zeilen (vollständiger Text über Titel und Screenreader). Keine Einstellungen oder Verlauf implementiert.
+- Gestaltung und Stapelverhalten angepasst aus MediaLyze, `frontend/src/components/NotificationHost.tsx` und `frontend/src/medialyze.css`, Stand `3c67044`; MediaLyze steht unter AGPL-3.0, ShareLyze unter AGPL-3.0-only. Die Übernahme ist im Quelltext gekennzeichnet. Build und 24 bestehende Tests erfolgreich; visueller und interaktiver Browsertest steht aus.
+
+- Abgleich mit MediaLyze: Kontrastpalette (`contrast`), Soft Fill (`tint`), 2,5 Sekunden und Gruppierung nach Thema fest voreingestellt. Kopiervorgänge desselben Links und Änderungen der Linkadresse teilen jeweils ein Thema; Fehler ohne Thema bilden eigene Decks. Hover/Fokus und versteckte Browser-Tabs pausieren die Zeit. ShareLyze verwendet Schließen statt MediaLyzes Navigationspfeil und eigene Statussymbole; Auch offene modale Dialoge pausieren die Zeit; ein Benachrichtigungsverlauf ist nicht implementiert. Ein direkter visueller Vergleich steht aus.

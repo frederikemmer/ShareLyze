@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./style.css";
 import { Statistics, type Analytics } from "./Statistics";
+import { Notifications, type Notification } from "./Notifications";
 import { version } from "../../package.json";
 import {
   BarChart3,
@@ -190,7 +191,16 @@ function App() {
     [user, setUser] = useState(""),
     [password, setPassword] = useState(""),
     [setupToken, setSetupToken] = useState(""),
-    [error, setError] = useState("");
+    [, setErrorState] = useState("");
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const nextNotification = useRef(0);
+  const notify = (type: Notification["type"], message: string, topicKey?: string) => {
+    if (message) {
+      const id = ++nextNotification.current;
+      setNotifications((current) => [...current, { id, type, message, topicKey }]);
+    }
+  };
+  const setError = (message: string) => { setErrorState(message); if (message) notify("error", message); };
   const [sources, setSources] = useState<Source[]>([]),
     [source, setSource] = useState(""),
     [path, setPath] = useState(""),
@@ -224,7 +234,7 @@ function App() {
   const [publicLinkOrigin, setPublicLinkOrigin] = useState("");
   const [savedLinkOrigin, setSavedLinkOrigin] = useState("");
   const [defaultOrigin, setDefaultOrigin] = useState("");
-  const [notice, setNotice] = useState("");
+  const setNotice = (message: string, topicKey?: string) => notify("success", message, topicKey);
   const accountMenuRef = useRef<HTMLDetailsElement>(null);
   const [browseLoading, setBrowseLoading] = useState(false);
   const [page, setPage] = useState<{
@@ -493,16 +503,7 @@ function App() {
           </nav>
         )}
       </header>
-      {notice && (
-        <p className="notice" role="status">
-          {notice}
-        </p>
-      )}
-      {error && (
-        <p className="error" role="alert">
-          {error}
-        </p>
-      )}
+      <Notifications entries={notifications} dismiss={(id) => setNotifications((current) => current.filter((entry) => entry.id !== id))} />
       {publicSlug ? (
         <section>
           <p className="eyebrow">FREIGABE</p>
@@ -729,7 +730,7 @@ function App() {
                     <div className="managed-row share-table-row">
                       <button type="button" className="share-slug" title="Link kopieren" aria-label={`Link /${s.slug} kopieren`} onClick={() => void run(async () => {
                         await navigator.clipboard.writeText(`${savedLinkOrigin}/${s.slug}`);
-                        setNotice("Link kopiert.");
+                        setNotice("Link kopiert.", `share:${s.id}`);
                       })}>/{s.slug}</button>
                       <span
                         className={
@@ -775,7 +776,7 @@ function App() {
                               await navigator.clipboard.writeText(
                                 `${savedLinkOrigin}/${s.slug}`,
                               );
-                              setNotice("Link kopiert.");
+                              setNotice("Link kopiert.", `share:${s.id}`);
                             })
                           }
                         >
@@ -1128,7 +1129,7 @@ function App() {
                       </span>
                       <button type="button" className="share-slug" title="Link kopieren" aria-label={`Link /${l.slug} kopieren`} onClick={() => void run(async () => {
                         await navigator.clipboard.writeText(`${savedLinkOrigin}/${l.slug}`);
-                        setNotice("Link kopiert.");
+                        setNotice("Link kopiert.", `link:${l.id}`);
                       })}>/{l.slug}</button>
                       <span
                         className={
@@ -1162,7 +1163,7 @@ function App() {
                               await navigator.clipboard.writeText(
                                 `${savedLinkOrigin}/${l.slug}`,
                               );
-                              setNotice("Link kopiert.");
+                              setNotice("Link kopiert.", `link:${l.id}`);
                             })
                           }
                         >
@@ -1313,7 +1314,7 @@ function App() {
                       );
                       setPublicLinkOrigin(result.publicLinkOrigin);
                       setSavedLinkOrigin(result.publicLinkOrigin);
-                      setNotice("Linkadresse gespeichert.");
+                      setNotice("Linkadresse gespeichert.", "settings:link-origin");
                     });
                   }}
                 >
