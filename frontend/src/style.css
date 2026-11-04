@@ -406,6 +406,7 @@ input:invalid:not(:placeholder-shown) {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
+  justify-content: space-between;
   gap: 12px;
   margin: 20px 0 16px;
 }
@@ -1262,3 +1263,6 @@ input:invalid:not(:placeholder-shown) {
 .notification-host:empty { display: none; }
 .status-control { display: inline-flex; align-items: center; gap: 3px; }
 .expired-indicator { color: #a15d00; font-size: .8rem; font-weight: 700; }
+
+.share-toolbar .search-field input { min-height: 34px; height: 34px; padding-top: 5px; padding-bottom: 5px; }
+.share-toolbar .share-filters { margin-left: auto; }

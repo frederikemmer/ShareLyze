@@ -674,6 +674,15 @@ function App() {
                 <h1>Datenfreigabe</h1>
               </div>
               <div className="share-toolbar">
+                <label className="search-field compact-field">
+                  <span>Freigaben suchen</span>
+                  <input
+                    type="search"
+                    value={shareQuery}
+                    onChange={(e) => setShareQuery(e.target.value)}
+                    placeholder="Kurzname"
+                  />
+                </label>
               <div
                 className="share-filters"
                 role="group"
@@ -707,15 +716,6 @@ function App() {
                   </button>
                 ))}
               </div>
-                <label className="search-field compact-field">
-                  <span>Freigaben suchen</span>
-                  <input
-                    type="search"
-                    value={shareQuery}
-                    onChange={(e) => setShareQuery(e.target.value)}
-                    placeholder="Kurzname"
-                  />
-                </label>
               </div>
               <div className="share-table-heading" aria-hidden="true">
                 <span>Kurzname</span>
@@ -1054,8 +1054,7 @@ function App() {
             </section>
             <section id="kurzlinks" hidden={view !== "kurzlinks"}>
               <h1>Kurzlinks</h1>
-              <div className="share-list-heading">
-                <h2>Alle Kurzlinks</h2>
+              <div className="share-toolbar">
                 <label className="search-field compact-field">
                   <span>Kurzlinks suchen</span>
                   <input
@@ -1065,7 +1064,6 @@ function App() {
                     placeholder="Kurzname oder Zieladresse"
                   />
                 </label>
-              </div>
               <div
                 className="share-filters"
                 role="group"
@@ -1099,6 +1097,7 @@ function App() {
                     </span>
                   </button>
                 ))}
+              </div>
               </div>
               <div
                 className="share-table-heading link-table-heading"

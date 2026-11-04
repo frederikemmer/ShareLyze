@@ -227,3 +227,7 @@ Der Abschlussabgleich mit konkreten Auditbefunden, Korrekturen und Prüfgrenzen 
 ### Benachrichtigungen und Statusspalte (4. November 2026)
 
 - Notification-Host nutzt einen neutralen Container statt der global gestalteten Section und verschwindet leer vollständig. In beiden Listen steht der Aktivierungsschalter in einer schmaleren Statusspalte; abgelaufene Freigaben erhalten zusätzlich einen Hinweis. Visuelle und interaktive Prüfung steht aus.
+
+### Suche und Filter (4. November 2026)
+
+- In Freigabe- und Kurzlinkansicht steht die kompaktere Suche links und das Statusfilter rechts in einer gemeinsamen, bei Platzmangel umbrechenden Zeile. Die Überschrift „Alle Kurzlinks“ ist entfernt. Visueller Nachtest steht aus.
