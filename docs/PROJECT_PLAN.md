@@ -21,7 +21,7 @@ Zielplattform ist unter anderem ein UGREEN NAS mit Docker Compose und Reverse Pr
 
 ### Speicher und Freigaben
 
-- Mehrere bestehende NAS-Verzeichnisse als getrennte Quellen einbinden. Erste Implementierung: Docker-Bind-Mounts, standardmäßig schreibgeschützt. Keine Schreiboperationen auf den Quelldateien.
+- Mehrere bestehende NAS-Verzeichnisse als getrennte Quellen einbinden. Docker-Bind-Mounts bleiben schreibgeschützt; Uploads werden separat im beschreibbaren ShareLyze-Speicher abgelegt. Keine Schreiboperationen auf den bestehenden Quelldateien.
 - Einzeldateien, mehrere ausgewählte Dateien und ganze Ordner freigeben; Auswahl kann mehrere Quellen umfassen.
 - Ordner sind **dynamisch**: Neue, geänderte und gelöschte Inhalte wirken sich auf spätere Ansichten und Downloads aus. Beim Anlegen sichtbar erklären, dass zukünftig hinzugefügte Inhalte freigegeben werden.
 - Einzeldateien referenzieren den ausgewählten Pfad. Ein Ersatz am selben Pfad kann daher als aktueller Inhalt erscheinen; keine historischen Dateiinhalte versprechen.
@@ -231,3 +231,51 @@ Der Abschlussabgleich mit konkreten Auditbefunden, Korrekturen und Prüfgrenzen 
 ### Suche und Filter (4. November 2026)
 
 - In Freigabe- und Kurzlinkansicht steht die kompaktere Suche links und das Statusfilter rechts in einer gemeinsamen, bei Platzmangel umbrechenden Zeile. Die Überschrift „Alle Kurzlinks“ ist entfernt. Visueller Nachtest steht aus.
+
+### Kurzlinkaktionen (4. November 2026)
+
+- Spaltenüberschrift der Kurzlinkliste entfernt. Öffnen, Kopieren und Bearbeiten in beiden Verwaltungslisten einheitlich gestaltet und mit den gewünschten Symbolformen und CSS-Bewegungen versehen; reduzierte Bewegung wird beachtet. Umsetzung ohne zusätzliche Motion-Abhängigkeit. Produktionsbuild erfolgreich; visueller und interaktiver Browsertest steht aus.
+
+- Kurzlinkliste: Kurzname steht links, die kleinere graue Zieladresse direkt daneben und wird bei Platzmangel mit Auslassung gekürzt. Build erfolgreich; visueller Nachtest steht aus.
+
+- Kurzlinkliste: Statusschalter direkt vor die Aktionssymbole verschoben. Build erfolgreich; visueller Nachtest steht aus.
+
+- Kurzlinkzeilen: Weiterleitungszahl und Aktionen belegen nur ihre benötigte Breite; die Zieladresse schrumpft bei schmaler Ansicht. Build erfolgreich; responsive Sichtprüfung steht aus.
+
+- Kurzlinkfilter zeigt zunächst die aktuelle Auswahl; Hover oder Fokus blendet die übrigen Optionen animiert ein, reduzierte Bewegung deaktiviert den Übergang. Build erfolgreich; Prüfung mit Maus, Tastatur und Touch steht aus.
+
+- Schmale Ansicht: Kopfzeile hält Logo und Navigation zusammen, solange Platz vorhanden ist. Suchfelder können schrumpfen; ihre Inline-Beschriftung bleibt sichtbar. Build erfolgreich; responsive Sichtprüfung steht aus.
+
+- Kurzlinksuche und Filter bleiben nebeneinander; das Suchfeld schrumpft flexibel. Build erfolgreich; Sichtprüfung schmaler Ansichten steht aus.
+
+- Kurzlinkfilter und ausklappbare Suche stehen in der Überschriftenzeile. Beim Schließen wird die Suche zurückgesetzt und der Fokus zum Suchsymbol zurückgeführt. Build erfolgreich; interaktive und responsive Prüfung steht aus.
+
+- Schließen-Symbol der Kurzlinksuche rechts neben das Suchfeld verschoben; Build erfolgreich.
+
+### ShareLyze-Icon (4. November 2026)
+
+- Ausgewähltes eigenständiges Markenzeichen integriert: dunkles S mit hellgrauen, unterbrochenen Kettengliedern auf warmer heller Kachel. Eine SVG-Maske hält die grauen Bögen mit gleichmäßigem Abstand vom S getrennt. MediaLyze diente als Farbreferenz; keine Logo-Geometrie übernommen.
+- `frontend/public/logo.svg` ist die Vorlage mit konturfolgenden Aussparungen an den grauen Enden. Die Kopfzeile zeigt die hintergrundlose Variante neben dem Schriftzug, auf schmalen Ansichten allein; `prefers-color-scheme` wählt die passende helle/dunkle Version. SVG-/ICO-Favicon, PNGs (16/32/180/192/512 px), Apple-Touch-Icon und Webmanifest eingebunden. Keine vollständige Offline-/PWA-Funktion zugesichert.
+- `npm run generate:icons` erzeugt die abgeleiteten Dateien reproduzierbar mit der Entwicklungsabhängigkeit Sharp. Produktionsbuild einschließlich TypeScript-Prüfung erfolgreich; PNG-/ICO-Formate und Größen geprüft und das gerasterte 512-px-Icon visuell kontrolliert. Live-Browserprüfung der Kopfzeile, Browser-Favicon-Caches und installierter Homescreen-Icons steht aus.
+
+- Logo-Varianten: `logo-light.svg` / `logo-dark.svg` mit Kachel sowie `logo-light-transparent.svg` / `logo-dark-transparent.svg` ohne Hintergrund (Namen bezeichnen das umgebende Theme). In den transparenten Varianten haben die ergänzenden Glieder dieselbe Farbe wie das S mit 32 % Deckkraft; die Zwischenräume bleiben transparent. Alle Varianten und Favicons werden aus der Vorlage mit `npm run generate:icons` erzeugt. Vier SVGs gerastert und auf weißem/schwarzem Hintergrund visuell geprüft; Produktionsbuild inklusive TypeScript erfolgreich. Live-Prüfung des Headers und Theme-Wechsels steht aus.
+
+- Kopfzeilenlogo von 42 auf 48 px vergrößert. Produktionsbuild erfolgreich; Sichtprüfung im Browser steht aus.
+
+- Versionsangabe an der Unterkante des Schriftzugs ausgerichtet; Build erfolgreich, Sichtprüfung steht aus.
+
+- Smartphone-Ansicht bis 600 px: Admin-Kopfzeile durch festen ShareLyze-Menübutton am rechten unteren Rand ersetzt. Menü enthält Navigation und Abmelden, Escape schließt es; öffentliche und nicht angemeldete Ansichten behalten die Kopfzeile. Build erfolgreich; Touch-, Tastatur- und Sichtprüfung stehen aus.
+
+- Kurzlink-Erstellung entfaltet sich anstelle des Buttons: Zieladresse und optionaler Kurzname stehen neben „Erstellen“ und dem Abbrechen-Symbol in einer Zeile. Reduzierte Bewegung wird beachtet. Build erfolgreich; visuelle und interaktive Prüfung steht aus.
+
+- Eingabefelder und Auswahlfelder verwenden die kompaktere Mindesthöhe von 34 px; die frühere 42-px-Regel wurde entfernt. Kurzlinkformular blendet nur noch ein, ohne Skalierung; reduzierte Bewegung bleibt berücksichtigt. Build erfolgreich; formularübergreifende visuelle Prüfung steht aus.
+
+- Datenfreigaben an Kurzlinks angeglichen: Suche in der Überschriftenzeile aufklappbar, Statusfilter auffächerbar, Spaltenüberschriften entfernt und Statusschalter vor Aktionen. Download- und Ablaufangaben bleiben erhalten; bei sehr schmalen Ansichten darf der Ablauf umbrechen. Beide Listen behalten ihre bisherige Reihenfolge; eine Sortierfunktion besteht derzeit nicht. Build und Tests erfolgreich (21 bestanden, 3 übersprungen); visuelle und interaktive Prüfung steht aus.
+
+- Freigabeauswahl zeigt verfügbare Speicherquellen direkt als öffnbare Ordner; Rückkehr zur Quellenübersicht über Pfadnavigation oder Zurück. Überschrift und Hinweistext entfernt. Build erfolgreich, Tests: 21 bestanden, 3 übersprungen; Browserprüfung ausstehend. Datei-/Ordner-Upload verwendet den separaten ShareLyze-Speicher; bestehende Quellen bleiben lesend eingebunden.
+
+### Separater Upload-Speicher (5. November 2026)
+
+- Dateien und Ordner können bei der Freigabeauswahl hochgeladen werden. Uploads werden unter `uploads` neben der Datenbank gespeichert (Docker: `/data/uploads`) und als eigene Quelle ausgewählt; `UPLOAD_ROOT` kann ein separates persistentes Verzeichnis festlegen. Bestehende Quellen bleiben unverändert. Der Inhalt des Upload-Speichers muss zusammen mit der Datenbank gesichert werden.
+- Uploads streamen einzeln, mit maximal 10 GiB je Datei und maximal 500 Dateien je Auswahl; Pfade werden geprüft, vorhandene Dateien nicht überschrieben und Symlinks bei der Erstellung abgewiesen. Ein abgebrochener Upload wird nach Möglichkeit entfernt; bereits vollständige Dateien bleiben erhalten und werden bei teilweisem Fehler ausgewählt. Leere Ordner, Fortsetzung, Löschen und automatische Bereinigung sind noch nicht implementiert; Speicherplatz und Berechtigungen müssen überwacht werden. Ein Ordnerupload hängt von Browserunterstützung für `webkitdirectory` ab.
+- Produktionsbuild und lokale Tests erfolgreich (22 bestanden, 3 Linux-Tests übersprungen). Docker-Image gebaut und isolierter Linux-API-Test erfolgreich: Authentifizierung, Origin, Traversal, Symlink, Überschreiben, Stream und Freigabe einer hochgeladenen Datei. Eine Browser-, NAS-, Last- und umfassende Sicherheitsprüfung steht aus.

@@ -6,17 +6,23 @@ import { Notifications, type Notification } from "./Notifications";
 import { version } from "../../package.json";
 import {
   BarChart3,
-  Copy, Pencil, Download, CalendarDays,
-  Eye,
+  Download, CalendarDays,
   File,
   Folder,
   Link2,
   LockKeyhole,
   LogOut,
   Settings,
+  Search, X,
   Share2,
   UserRound,
 } from "lucide-react";
+
+function ActionIcon({ kind }: { kind: "external" | "copy" | "pen" }) {
+  return <svg className={`action-icon action-icon-${kind}`} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    {kind === "external" ? <><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><g className="icon-moving"><path d="M15 3h6v6" /><path d="M10 14 21 3" /></g></> : kind === "copy" ? <><rect className="icon-moving" height="14" rx="2" width="14" x="8" y="8" /><path className="icon-copy-back" d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" /></> : <><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path className="icon-moving" d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z" /></>}
+  </svg>;
+}
 
 type Source = { id: string; name: string };
 type Entry = { name: string; kind: "file" | "directory" };
@@ -214,6 +220,13 @@ function App() {
     [expires, setExpires] = useState(""),
     [url, setUrl] = useState(""),
     [linkSlug, setLinkSlug] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState("");
+  const [linkSearchOpen, setLinkSearchOpen] = useState(false);
+  const [shareSearchOpen, setShareSearchOpen] = useState(false);
+  const shareSearchButton = useRef<HTMLButtonElement>(null);
+  const [linkCreateOpen, setLinkCreateOpen] = useState(false);
+  const linkSearchButton = useRef<HTMLButtonElement>(null);
   const [shareQuery, setShareQuery] = useState(""),
     [linkQuery, setLinkQuery] = useState(""),
     [entryQuery, setEntryQuery] = useState(""),
@@ -339,6 +352,32 @@ function App() {
   }
   const post = (route: string, body: unknown) =>
     api(route, { method: "POST", body: JSON.stringify(body) });
+  async function uploadFiles(files: FileList | null) {
+    if (!files?.length || uploading) return;
+    const list = Array.from(files);
+    if (list.length > 500) { setError("Bitte höchstens 500 Dateien gleichzeitig hochladen."); return; }
+    setUploading(true);
+    let batch = "";
+    const uploaded: Item[] = [];
+    try {
+      const result = await post("/api/uploads", {}) as { id: string };
+      batch = result.id;
+      for (const [index, file] of list.entries()) {
+        setUploadProgress(`${index + 1} / ${list.length}: ${file.name}`);
+        const relative = file.webkitRelativePath || file.name;
+        const response = await fetch(`/api/uploads/${encodeURIComponent(batch)}?path=${encodeURIComponent(relative)}`, { method: "PUT", headers: { "Content-Type": "application/octet-stream" }, body: file });
+        if (!response.ok) throw new Error(`Upload von „${file.name}“ fehlgeschlagen (${response.status}).`);
+        const first = relative.split("/")[0];
+        const item: Item = { sourceId: "sharelyze-uploads", path: `${batch}/${relative.includes("/") ? first : relative}`, kind: relative.includes("/") ? "directory" : "file" };
+        if (!uploaded.some((existing) => existing.path === item.path)) uploaded.push(item);
+      }
+      addItems(uploaded);
+      setNotice(`${list.length} Datei(en) hochgeladen und ausgewählt.`);
+    } catch (error) {
+      if (uploaded.length) addItems(uploaded);
+      setError(`${error instanceof Error ? error.message : "Upload fehlgeschlagen."} Bereits hochgeladene Dateien bleiben im Upload-Speicher erhalten.`);
+    } finally { setUploading(false); setUploadProgress(""); }
+  }
   function addItems(items: Item[]) {
     const seen = new Set(
       selected.map((item) => JSON.stringify([item.sourceId, item.path])),
@@ -406,19 +445,19 @@ function App() {
   }
   return (
     <main className="shell">
-      <header className="app-header">
+      <header className={`app-header${!publicSlug && status?.authenticated ? " admin-header" : ""}`}>
         <div className="app-title-block">
           <a
             className="app-brand"
             href={publicSlug ? "/" : "#freigaben"}
             aria-label="ShareLyze – Freigaben"
           >
-            <span className="brand-word">ShareLyze</span>
-            <span className="mark" aria-hidden="true">
-              S
-            </span>
+            <picture className="brand-icon" aria-hidden="true">
+              <source media="(prefers-color-scheme: dark)" srcSet="/logo-dark-transparent.svg" />
+              <img src="/logo-light-transparent.svg" width="48" height="48" alt="" />
+            </picture>
+            <span className="brand-label"><span className="brand-word">ShareLyze</span><span className="app-version">v{version}</span></span>
           </a>
-          <span className="app-version">v{version}</span>
         </div>
         {!publicSlug && status?.authenticated && (
           <nav className="header-nav" aria-label="Hauptnavigation">
@@ -503,6 +542,22 @@ function App() {
           </nav>
         )}
       </header>
+      {!publicSlug && status?.authenticated && <details className="mobile-menu" onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          const menu = event.currentTarget;
+          menu.open = false;
+          menu.querySelector("summary")?.focus();
+        }
+      }}>
+        <summary aria-label="Menü öffnen"><picture aria-hidden="true"><source media="(prefers-color-scheme: dark)" srcSet="/logo-dark-transparent.svg" /><img src="/logo-light-transparent.svg" width="36" height="36" alt="" /></picture></summary>
+        <nav className="mobile-menu-panel" aria-label="Mobile Hauptnavigation">
+          {([
+            ["freigaben", "Freigaben", Share2], ["kurzlinks", "Kurzlinks", Link2],
+            ["statistiken", "Statistiken", BarChart3], ["einstellungen", "Einstellungen", Settings],
+          ] as const).map(([id, label, Icon]) => <a key={id} href={`#${id}`} aria-current={view === id ? "page" : undefined} onClick={(event) => { event.currentTarget.closest("details")!.open = false; setError(""); setNotice(""); }}><Icon size={18} aria-hidden="true" />{label}</a>)}
+          <button type="button" onClick={(event) => { event.currentTarget.closest("details")!.open = false; void run(async () => { await post("/api/auth/logout", {}); await refresh(); }); }}><LogOut size={18} aria-hidden="true" />Abmelden</button>
+        </nav>
+      </details>}
       <Notifications entries={notifications} dismiss={(id) => setNotifications((current) => current.filter((entry) => entry.id !== id))} />
       {publicSlug ? (
         <section>
@@ -670,21 +725,17 @@ function App() {
         <div className="admin-layout">
           <div className="admin-content">
             <section id="freigaben" hidden={view !== "freigaben"}>
-              <div className="row">
-                <h1>Datenfreigabe</h1>
-              </div>
-              <div className="share-toolbar">
-                <label className="search-field compact-field">
-                  <span>Freigaben suchen</span>
-                  <input
-                    type="search"
-                    value={shareQuery}
-                    onChange={(e) => setShareQuery(e.target.value)}
-                    placeholder="Kurzname"
-                  />
-                </label>
+              <div className="share-toolbar link-heading">
+                {shareSearchOpen ? <>
+                  <h1 className="visually-hidden">Datenfreigabe</h1>
+                  <label className="search-field compact-field"><span>Freigaben suchen</span><input autoFocus type="search" value={shareQuery} onChange={(e) => setShareQuery(e.target.value)} placeholder="Kurzname" /></label>
+                  <button type="button" className="share-action heading-search-button" aria-label="Suche schließen" onClick={() => { setShareSearchOpen(false); setShareQuery(""); requestAnimationFrame(() => shareSearchButton.current?.focus()); }}><X size={18} aria-hidden="true" /></button>
+                </> : <>
+                  <h1>Datenfreigabe</h1>
+                  <button ref={shareSearchButton} type="button" className="share-action heading-search-button" aria-label="Freigaben suchen" onClick={() => setShareSearchOpen(true)}><Search size={18} aria-hidden="true" /></button>
+                </>}
               <div
-                className="share-filters"
+                className="share-filters link-filters"
                 role="group"
                 aria-label="Freigaben filtern"
               >
@@ -717,13 +768,6 @@ function App() {
                 ))}
               </div>
               </div>
-              <div className="share-table-heading" aria-hidden="true">
-                <span>Kurzname</span>
-                <span>Status</span>
-                <span>Downloadstarts</span>
-                <span>Läuft ab</span>
-                <span>Aktionen</span>
-              </div>
               <ul className="managed-list share-list">
                 {visibleShares.map((s) => (
                   <li key={s.id}>
@@ -732,6 +776,21 @@ function App() {
                         await navigator.clipboard.writeText(`${savedLinkOrigin}/${s.slug}`);
                         setNotice("Link kopiert.", `share:${s.id}`);
                       })}>/{s.slug}</button>
+                      <span
+                        className="share-stat"
+                        title="Downloadstarts einschließlich fortgesetzter Anfragen"
+                      >
+                        <Download size={15} aria-label="Downloadstarts" /> {analytics?.links.find(
+                          (x) =>
+                            x.slug === s.slug && x.type === "download_start",
+                        )?.count ?? 0}
+                      </span>
+                      <span className="share-expiry" title="Ablauf"><CalendarDays size={15} aria-label="Ablauf" />
+                        {s.expires_at
+                          ? new Date(s.expires_at).toLocaleDateString("de-DE")
+                          : "Unbegrenzt"}
+                      </span>
+                      <div className="managed-actions">
                       <div className="status-control">
                         <button
                           type="button" role="switch" aria-checked={!!s.active} aria-label={`Freigabe /${s.slug} aktivieren`} className="toggle-switch"
@@ -749,32 +808,17 @@ function App() {
                         </button>
                         {shareStatus(s) === "expired" && <span className="expired-indicator" title="Abgelaufen" aria-label="Abgelaufen">!</span>}
                       </div>
-                      <span
-                        className="share-stat"
-                        title="Downloadstarts einschließlich fortgesetzter Anfragen"
-                      >
-                        <Download size={15} aria-label="Downloadstarts" /> {analytics?.links.find(
-                          (x) =>
-                            x.slug === s.slug && x.type === "download_start",
-                        )?.count ?? 0}
-                      </span>
-                      <span className="share-expiry" title="Ablauf"><CalendarDays size={15} aria-label="Ablauf" />
-                        {s.expires_at
-                          ? new Date(s.expires_at).toLocaleDateString("de-DE")
-                          : "Unbegrenzt"}
-                      </span>
-                      <div className="managed-actions">
                         <a
                           className="share-action"
                           href={`/${s.slug}`}
                           aria-label={`Freigabe ${s.slug} öffnen`}
                           title="Freigabe öffnen"
                         >
-                          <Eye size={16} aria-hidden="true" />
+                          <ActionIcon kind="external" />
                         </a>
                         <button
                           type="button"
-                          className="plain small-action" title="Link kopieren" aria-label="Link kopieren"
+                          className="share-action" title="Link kopieren" aria-label="Link kopieren"
                           onClick={() =>
                             void run(async () => {
                               await navigator.clipboard.writeText(
@@ -784,9 +828,9 @@ function App() {
                             })
                           }
                         >
-                          <Copy size={16} aria-hidden="true" />
+                          <ActionIcon kind="copy" />
                         </button>
-                        <button type="button" className="plain" title="Bearbeiten" aria-label="Freigabe bearbeiten" aria-expanded={editingShare === s.id} onClick={() => setEditingShare(editingShare === s.id ? null : s.id)}><Pencil size={16} /></button>
+                        <button type="button" className="share-action" title="Bearbeiten" aria-label="Freigabe bearbeiten" aria-expanded={editingShare === s.id} onClick={() => setEditingShare(editingShare === s.id ? null : s.id)}><ActionIcon kind="pen" /></button>
                       </div>
                     </div>
                     {editingShare === s.id && <ShareEditor
@@ -822,31 +866,21 @@ function App() {
               </ul>
               <details className="create-panel">
                 <summary>＋ Neue Freigabe</summary>
-                <h2>Dateien auswählen</h2>
-                <p>
-                  Freigegebene Ordner enthalten auch später hinzugefügte
-                  Dateien.
-                </p>
-                <label>
-                  Speicherquelle
-                  <select
-                    value={source}
-                    onChange={(e) => {
-                      setSource(e.target.value);
-                      setPath("");
-                    }}
-                  >
-                    <option value="">Quelle auswählen</option>
-                    {sources.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <div className="upload-actions">
+                  <label className="upload-picker">Dateien hochladen<input type="file" multiple disabled={uploading} onChange={(e) => { void uploadFiles(e.currentTarget.files); e.currentTarget.value = ""; }} /></label>
+                  <label className="upload-picker">Ordner hochladen<input type="file" multiple ref={(input) => input?.setAttribute("webkitdirectory", "")} disabled={uploading} onChange={(e) => { void uploadFiles(e.currentTarget.files); e.currentTarget.value = ""; }} /></label>
+                  {uploading && <span role="status">Upload: {uploadProgress}</span>}
+                </div>
+                {!source && <ul className="file-list source-list" aria-label="Verfügbare Speicherquellen">
+                  {sources.map((item) => <li key={item.id}>
+                    <button type="button" className="source-open" onClick={() => { setSource(item.id); setPath(""); setEntryQuery(""); }}><Folder size={16} aria-hidden="true" />{item.name}</button>
+                  </li>)}
+                  {sources.length === 0 && <li className="empty-state">Keine Speicherquellen verfügbar.</li>}
+                </ul>}
                 {source && (
                   <>
                     <div className="breadcrumbs" aria-label="Aktueller Ordner">
+                      <button type="button" onClick={() => { setSource(""); setPath(""); setEntryQuery(""); }}>Speicherquellen</button> / {" "}
                       <button type="button" onClick={() => setPath("")}>
                         {sources.find((s) => s.id === source)?.name}
                       </button>
@@ -881,7 +915,7 @@ function App() {
                       <button
                         className="secondary"
                         onClick={() =>
-                          setPath(path.split("/").slice(0, -1).join("/"))
+                          path ? setPath(path.split("/").slice(0, -1).join("/")) : setSource("")
                         }
                       >
                         Eine Ebene zurück
@@ -1046,26 +1080,27 @@ function App() {
                       onChange={(e) => setExpires(e.target.value)}
                     />
                   </label>
-                  <button disabled={!selected.length}>
+                  <button disabled={!selected.length || uploading}>
                     Freigabe erstellen
                   </button>
                 </form>
               </details>
             </section>
             <section id="kurzlinks" hidden={view !== "kurzlinks"}>
-              <h1>Kurzlinks</h1>
-              <div className="share-toolbar">
-                <label className="search-field compact-field">
-                  <span>Kurzlinks suchen</span>
-                  <input
-                    type="search"
-                    value={linkQuery}
-                    onChange={(e) => setLinkQuery(e.target.value)}
-                    placeholder="Kurzname oder Zieladresse"
-                  />
-                </label>
+              <div className="share-toolbar link-heading">
+                {linkSearchOpen ? <>
+                  <h1 className="visually-hidden">Kurzlinks</h1>
+                  <label className="search-field compact-field">
+                    <span>Kurzlinks suchen</span>
+                    <input autoFocus type="search" value={linkQuery} onChange={(e) => setLinkQuery(e.target.value)} placeholder="Kurzname oder Zieladresse" />
+                  </label>
+                  <button type="button" className="share-action heading-search-button" aria-label="Suche schließen" onClick={() => { setLinkSearchOpen(false); setLinkQuery(""); requestAnimationFrame(() => linkSearchButton.current?.focus()); }}><X size={18} aria-hidden="true" /></button>
+                </> : <>
+                  <h1>Kurzlinks</h1>
+                  <button ref={linkSearchButton} type="button" className="share-action heading-search-button" aria-label="Kurzlinks suchen" onClick={() => setLinkSearchOpen(true)}><Search size={18} aria-hidden="true" /></button>
+                </>}
               <div
-                className="share-filters"
+                className="share-filters link-filters"
                 role="group"
                 aria-label="Kurzlinks filtern"
               >
@@ -1099,27 +1134,26 @@ function App() {
                 ))}
               </div>
               </div>
-              <div
-                className="share-table-heading link-table-heading"
-                aria-hidden="true"
-              >
-                <span>Zieladresse</span>
-                <span>Kurzname</span>
-                <span>Status</span>
-                <span>Weiterleitungen</span>
-                <span>Aktionen</span>
-              </div>
               <ul className="managed-list share-list">
                 {visibleLinks.map((l) => (
                   <li key={l.id}>
                     <div className="managed-row share-table-row link-table-row">
-                      <span className="link-target" title={l.target_url}>
-                        {l.target_url}
-                      </span>
+                      <div className="link-identity">
                       <button type="button" className="share-slug" title="Link kopieren" aria-label={`Link /${l.slug} kopieren`} onClick={() => void run(async () => {
                         await navigator.clipboard.writeText(`${savedLinkOrigin}/${l.slug}`);
                         setNotice("Link kopiert.", `link:${l.id}`);
                       })}>/{l.slug}</button>
+                      <span className="link-target" title={l.target_url}>{l.target_url}</span>
+                      </div>
+                      <span
+                        className="link-stat"
+                        title="Gezählte Weiterleitungen innerhalb der Aufbewahrungsdauer"
+                      >
+                        <BarChart3 size={15} aria-label="Weiterleitungen" /> {analytics?.links.find(
+                          (x) => x.slug === l.slug && x.type === "redirect",
+                        )?.count ?? 0}
+                      </span>
+                      <div className="managed-actions">
                       <div className="status-control">
                         <button
                           type="button" role="switch" aria-checked={!!l.active} aria-label={`Kurzlink /${l.slug} aktivieren`} className="toggle-switch"
@@ -1136,26 +1170,17 @@ function App() {
                           <span className="switch-track" aria-hidden="true" />
                         </button>
                       </div>
-                      <span
-                        className="link-stat"
-                        title="Gezählte Weiterleitungen innerhalb der Aufbewahrungsdauer"
-                      >
-                        <BarChart3 size={15} aria-label="Weiterleitungen" /> {analytics?.links.find(
-                          (x) => x.slug === l.slug && x.type === "redirect",
-                        )?.count ?? 0}
-                      </span>
-                      <div className="managed-actions">
                         <a
                           className="share-action"
                           href={`/${l.slug}`}
                           aria-label={`Kurzlink /${l.slug} öffnen`}
                           title="Kurzlink öffnen"
                         >
-                          <Eye size={16} aria-hidden="true" />
+                          <ActionIcon kind="external" />
                         </a>
                         <button
                           type="button"
-                          className="plain small-action" title="Link kopieren" aria-label="Link kopieren"
+                          className="share-action" title="Link kopieren" aria-label="Link kopieren"
                           onClick={() =>
                             void run(async () => {
                               await navigator.clipboard.writeText(
@@ -1165,10 +1190,10 @@ function App() {
                             })
                           }
                         >
-                          <Copy size={16} aria-hidden="true" />
+                          <ActionIcon kind="copy" />
                         </button>
                         <button
-                          className="plain"
+                          className="share-action"
                           title="Bearbeiten" aria-label="Kurzlink bearbeiten" aria-expanded={editingLink === l.id}
                           aria-controls={`link-editor-${l.id}`}
                           onClick={() => {
@@ -1180,7 +1205,7 @@ function App() {
                             }
                           }}
                         >
-                          <Pencil size={16} aria-hidden="true" />
+                          <ActionIcon kind="pen" />
                         </button>
                       </div>
                     </div>
@@ -1240,9 +1265,8 @@ function App() {
                   </li>
                 )}
               </ul>
-              <details className="create-panel">
-                <summary>＋ Neuer Kurzlink</summary>
-                <form
+              <div className="create-panel link-create-panel">
+                {!linkCreateOpen ? <button type="button" className="link-create-toggle" onClick={() => setLinkCreateOpen(true)}>＋ Neuer Kurzlink</button> : <form className="link-create-form"
                   onSubmit={(e) => {
                     e.preventDefault();
                     void run(async () => {
@@ -1253,6 +1277,7 @@ function App() {
                     });
                   }}
                 >
+                  <div className="link-create-fields">
                   <label className="compact-field">
                     <span>Zieladresse</span>
                     <input
@@ -1269,9 +1294,10 @@ function App() {
                       onChange={(e) => setLinkSlug(e.target.value)}
                     />
                   </label>
-                  <button>Kurzlink erstellen</button>
-                </form>
-              </details>
+                  </div>
+                  <div className="link-create-actions"><button type="submit">Erstellen</button><button type="button" className="share-action" aria-label="Kurzlink-Erstellung abbrechen" title="Abbrechen" onClick={() => setLinkCreateOpen(false)}><X size={18} aria-hidden="true" /></button></div>
+                </form>}
+              </div>
             </section>
             <section id="statistiken" hidden={view !== "statistiken"}>
               <Statistics data={analytics} />

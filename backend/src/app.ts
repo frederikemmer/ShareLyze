@@ -14,6 +14,7 @@ import {
 } from "./auth";
 import { externalUrl, normalizeSlug, randomSlug } from "./links";
 import { sharesRouter } from "./shares";
+import { uploadsRouter } from "./uploads";
 import { join } from "node:path";
 
 interface AppOptions {
@@ -22,6 +23,7 @@ interface AppOptions {
   setupToken: string;
   secureCookies: boolean;
   frontendDir?: string;
+  uploadRoot?: string;
   trustedProxies?: string[];
   allowLoopbackAliases?: boolean;
   developmentOrigins?: string[];
@@ -34,6 +36,7 @@ export function createApp({
   setupToken,
   secureCookies,
   frontendDir,
+  uploadRoot,
   trustedProxies = [],
   allowLoopbackAliases = false,
   developmentOrigins = [],
@@ -401,6 +404,7 @@ export function createApp({
     ).run(row.id, "redirect", new Date().toISOString(), ...visitorDetails(req));
     res.redirect(302, row.target_url);
   });
+  if (uploadRoot) app.use(uploadsRouter(uploadRoot, requireAdmin));
   app.use(
     sharesRouter(
       db,

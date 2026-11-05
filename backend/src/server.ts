@@ -23,6 +23,7 @@ if (
 const dbPath = resolve(process.env.DB_PATH || "./.local-config/sharelyze.db");
 mkdirSync(dirname(dbPath), { recursive: true, mode: 0o700 });
 const db = openDatabase(dbPath);
+const uploadRoot = resolve(process.env.UPLOAD_ROOT || resolve(dirname(dbPath), "uploads"));
 const retentionDays = Number(process.env.ANALYTICS_RETENTION_DAYS || "30");
 if (
   !Number.isInteger(retentionDays) ||
@@ -55,11 +56,14 @@ setInterval(clearOldEvents, 86400000).unref();
     throw new Error(
       "SOURCES_JSON must contain sources with an id, name and absolute root",
     );
+  if (sources.some((s: any) => s.id === "sharelyze-uploads" || resolve(s.root) === uploadRoot || uploadRoot.startsWith(resolve(s.root) + "/") || resolve(s.root).startsWith(uploadRoot + "/")))
+    throw new Error("Upload storage must be separate from configured sources");
   if (new Set(sources.map((s) => s.id)).size !== sources.length)
     throw new Error("Duplicate source IDs");
+  mkdirSync(uploadRoot, { recursive: true, mode: 0o700 });
   db.transaction(() => {
     db.prepare("UPDATE sources SET active=0").run();
-    for (const s of sources) {
+    for (const s of [...sources, { id: "sharelyze-uploads", name: "Uploads", root: uploadRoot }]) {
       const old = db
         .prepare("SELECT root FROM sources WHERE id=?")
         .get(s.id) as { root: string } | undefined;
@@ -93,6 +97,7 @@ if (
   throw new Error("Local development aliases require a loopback-only backend");
 const app = createApp({
   db,
+  uploadRoot,
   publicOrigin,
   setupToken,
   secureCookies: url.protocol === "https:",
