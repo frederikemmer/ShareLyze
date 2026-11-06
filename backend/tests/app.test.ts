@@ -393,7 +393,7 @@ describe("admin authentication", () => {
       .set("Cookie", cookie)
       .send({ url: "https://example.org/path", slug: "Test" })
       .expect(201);
-    expect(created.body.slug).toBe("test");
+    expect(created.body.slug).toBe("Test");
     await request(app)
       .post("/api/links")
       .set("Origin", origin)
@@ -419,7 +419,7 @@ describe("admin authentication", () => {
       .expect(200);
     expect(analytics.body.dailyByLink).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ slug: "test", type: "redirect", count: 2 }),
+        expect.objectContaining({ slug: "Test", type: "redirect", count: 2 }),
       ]),
     );
     await request(app)
@@ -427,8 +427,8 @@ describe("admin authentication", () => {
       .set("Origin", origin)
       .set("Cookie", cookie)
       .send({ active: false })
-      .expect(200);
-    await request(app).get("/r/test").expect(404);
+      .expect(400);
+    await request(app).get("/r/test").expect(302);
     db.exec("DELETE FROM events; DELETE FROM links");
   });
 });

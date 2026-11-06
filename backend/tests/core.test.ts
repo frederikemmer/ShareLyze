@@ -45,7 +45,7 @@ describe("HTTP range parser", () => {
 describe("database migration", () => {
   it("creates constrained tables and refuses links with two targets", () => {
     const db = openDatabase(":memory:");
-    expect(db.pragma("user_version", { simple: true })).toBe(7);
+    expect(db.pragma("user_version", { simple: true })).toBe(13);
     expect(() =>
       db
         .prepare(
@@ -55,4 +55,21 @@ describe("database migration", () => {
     ).toThrow();
     db.close();
   });
+});
+
+it("migrates inactive external links to expired without activating shares", async () => {
+  const { mkdtempSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync(join(tmpdir(), "sharelyze-migration-"));
+  try {
+    const file = join(dir, "db.sqlite");
+    const old = openDatabase(file);
+    old.exec("INSERT INTO shares(id,title,created_at) VALUES('s','s','now'); INSERT INTO links(id,slug,target_url,active,created_at) VALUES('x','old','https://example.org',0,'now'); INSERT INTO links(id,slug,share_id,active,created_at) VALUES('y','share-test','s',0,'now'); ALTER TABLE links DROP COLUMN deleted_at; ALTER TABLE shares DROP COLUMN deleted_at; ALTER TABLE shares DROP COLUMN purged_at; PRAGMA user_version=10;");
+    old.close();
+    const migrated = openDatabase(file);
+    expect(migrated.prepare("SELECT active,expires_at FROM links WHERE id='x'").get()).toEqual({active:1,expires_at:"1970-01-01T00:00:00.000Z"});
+    expect(migrated.prepare("SELECT active,expires_at FROM links WHERE id='y'").get()).toEqual({active:0,expires_at:null});
+    migrated.close();
+  } finally { rmSync(dir,{recursive:true,force:true}); }
 });

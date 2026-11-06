@@ -21,3 +21,8 @@ media/
 node_modules
 prototypes
 /.local-test-files/
+
+# Local key for recoverable link passwords.
+link-password.key
+
+.local-sources/

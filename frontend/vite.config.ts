@@ -9,7 +9,7 @@ export default defineConfig({
     proxy: {
       "/api": `http://127.0.0.1:${process.env.BACKEND_PORT || "3000"}`,
       "/r/": `http://127.0.0.1:${process.env.BACKEND_PORT || "3000"}`,
-      "^/[a-z0-9][a-z0-9-]{0,63}$": `http://127.0.0.1:${process.env.BACKEND_PORT || "3000"}`,
+      "^/[a-zA-Z0-9][a-zA-Z0-9-]{0,63}(?:\\?.*)?$": `http://127.0.0.1:${process.env.BACKEND_PORT || "3000"}`,
     },
   },
   build: { outDir: "../dist/frontend", emptyOutDir: true },

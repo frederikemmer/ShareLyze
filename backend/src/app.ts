@@ -1,3 +1,7 @@
+import { getUploadSettings } from "./upload-settings";
+import { validateUploadSettings } from "../../shared/upload-filter";
+import { getRetention, validateRetention } from "./retention";
+import { PreviewCache } from "./previews";
 import { visitorDetails } from "./analytics";
 import express, {
   type Request,
@@ -12,7 +16,11 @@ import {
   hashPassword,
   verifyPassword,
 } from "./auth";
-import { externalUrl, normalizeSlug, randomSlug } from "./links";
+import { getDateTimeSettings, validateDateTimeSettings } from "./date-time-settings";
+import { encryptLinkPassword, decryptLinkPassword } from "./password-vault";
+import { getSlugSettings, suggestSlug, validateSlugSettings } from "./slug-settings";
+import { externalUrl, normalizeSlug } from "./links";
+import { linkAccess, validateLinkProtection } from "./link-protection";
 import { sharesRouter } from "./shares";
 import { uploadsRouter } from "./uploads";
 import { join } from "node:path";
@@ -24,6 +32,8 @@ interface AppOptions {
   secureCookies: boolean;
   frontendDir?: string;
   uploadRoot?: string;
+  passwordKey?: Buffer;
+  previewCache?: PreviewCache;
   trustedProxies?: string[];
   allowLoopbackAliases?: boolean;
   developmentOrigins?: string[];
@@ -37,6 +47,8 @@ export function createApp({
   secureCookies,
   frontendDir,
   uploadRoot,
+  passwordKey,
+  previewCache = new PreviewCache(),
   trustedProxies = [],
   allowLoopbackAliases = false,
   developmentOrigins = [],
@@ -294,15 +306,51 @@ export function createApp({
     ).run(parsed.origin);
     res.json({ publicLinkOrigin: parsed.origin, defaultOrigin: origin });
   });
+  app.get("/api/settings/uploads", requireAdmin, (_req,res) => res.json(getUploadSettings(db)));
+  app.put("/api/settings/uploads", requireAdmin, (req,res) => {
+    let value;
+    try {value=validateUploadSettings(req.body);} catch {res.status(400).json({error:"Invalid upload settings"});return;}
+    db.prepare("INSERT INTO settings(key,value) VALUES('upload_filter',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(JSON.stringify(value));
+    res.json(value);
+  });
+  app.get("/api/settings/retention", requireAdmin, (_req,res) => res.json({...getRetention(db), analyticsLocked:!!process.env.ANALYTICS_RETENTION_DAYS}));
+  app.put("/api/settings/retention", requireAdmin, (req,res) => {
+    try {
+      const value = validateRetention(req.body);
+      db.prepare("INSERT INTO settings(key,value) VALUES('retention',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(JSON.stringify(value));
+      res.json({...getRetention(db),analyticsLocked:!!process.env.ANALYTICS_RETENTION_DAYS});
+    } catch {res.status(400).json({error:"Invalid retention settings"});}
+  });
+  app.get("/api/previews", requireAdmin, async (_req,res) => res.json({...previewCache.status,...await previewCache.clean(getRetention(db).previewDays)}));
+  app.post("/api/previews/warm", requireAdmin, (_req,res) => {void previewCache.warm(db);res.status(202).json({ok:true});});
+  app.delete("/api/previews", requireAdmin, async (_req,res) => {
+    try {res.json(await previewCache.clean(getRetention(db).previewDays,true));}
+    catch {res.status(409).json({error:"Preview cache busy"});}
+  });
+  app.get("/api/settings/datetime", requireAdmin, (_req, res) => res.json(getDateTimeSettings(db)));
+  app.put("/api/settings/datetime", requireAdmin, (req, res) => {
+    let settings;
+    try { settings = validateDateTimeSettings(req.body); } catch {res.status(400).json({error:"Invalid date/time settings"});return;}
+    db.prepare("INSERT INTO settings(key,value) VALUES('date_time_defaults',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(JSON.stringify(settings));
+    res.json(settings);
+  });
+  app.get("/api/settings/slugs", requireAdmin, (_req, res) => res.json(getSlugSettings(db)));
+  app.put("/api/settings/slugs", requireAdmin, (req, res) => {
+    let settings;
+    try {settings = validateSlugSettings(req.body);} catch {res.status(400).json({error:"Invalid slug settings"});return;}
+    db.prepare("INSERT INTO settings(key,value) VALUES('slug_defaults',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(JSON.stringify(settings));
+    res.json(settings);
+  });
+  app.post("/api/slugs/suggest", requireAdmin, (_req, res) => res.json({slug:suggestSlug(db)}));
   app.get("/api/links", requireAdmin, (_req, res) => {
     const links = db
       .prepare(
-        "SELECT id,slug,target_url,active,created_at FROM links WHERE target_url IS NOT NULL ORDER BY created_at DESC",
+        "SELECT id,slug,target_url,active,created_at,expires_at,password_hash IS NOT NULL AS has_password,password_encrypted IS NOT NULL AS has_copyable_password FROM links WHERE target_url IS NOT NULL AND deleted_at IS NULL ORDER BY created_at DESC",
       )
       .all();
     res.json({ links });
   });
-  app.post("/api/links", requireAdmin, (req, res) => {
+  app.post("/api/links", requireAdmin, async (req, res) => {
     if (
       typeof req.body?.url !== "string" ||
       (req.body.slug !== undefined && typeof req.body.slug !== "string")
@@ -312,21 +360,23 @@ export function createApp({
     }
     let slug: string, url: string;
     try {
-      slug = req.body.slug ? normalizeSlug(req.body.slug) : randomSlug();
+      validateLinkProtection(req.body);
+      slug = req.body.slug ? normalizeSlug(req.body.slug, true) : suggestSlug(db);
       url = externalUrl(req.body.url);
     } catch {
       res.status(400).json({ error: "Invalid slug or URL" });
       return;
     }
     const id = randomUUID();
+    const passwordHash = req.body.password ? await hashPassword(req.body.password, 1) : null;
     try {
       db.prepare(
-        "INSERT INTO links (id,slug,target_url,created_at) VALUES (?,?,?,?)",
-      ).run(id, slug, url, new Date().toISOString());
+        "INSERT INTO links (id,slug,target_url,created_at,password_hash,expires_at,case_sensitive,password_encrypted) VALUES (?,?,?,?,?,?,?,?)",
+      ).run(id, slug, url, new Date().toISOString(), passwordHash, req.body.expiresAt ? new Date(req.body.expiresAt).toISOString() : null, getSlugSettings(db).caseSensitive ? 1 : 0, req.body.password && passwordKey ? encryptLinkPassword(req.body.password,passwordKey,id) : null);
     } catch (error) {
       if (
         error instanceof Error &&
-        error.message.includes("UNIQUE constraint failed: links.slug")
+        error.message.includes("links.slug")
       ) {
         res.status(409).json({ error: "Slug already exists" });
         return;
@@ -335,21 +385,37 @@ export function createApp({
     }
     res.status(201).json({ id, slug, url });
   });
-  app.patch("/api/links/:id", requireAdmin, (req, res) => {
+  app.post("/api/links/:id/password", requireAdmin, rateLimit("copy-password", 60, 60_000), (req, res) => {
+    const row = db.prepare("SELECT password_hash,password_encrypted FROM links WHERE id=? AND target_url IS NOT NULL AND deleted_at IS NULL").get(req.params.id) as {password_hash:string|null;password_encrypted:string|null}|undefined;
+    if(!row?.password_hash) {res.status(404).json({error:"Not found"});return;}
+    if(!row.password_encrypted || !passwordKey) {res.status(409).json({code:"PASSWORD_NOT_COPYABLE"});return;}
+    try {res.json({password:decryptLinkPassword(row.password_encrypted,passwordKey,String(req.params.id))});}
+    catch {res.status(409).json({code:"PASSWORD_NOT_COPYABLE"});}
+  });
+  app.delete("/api/links/:id", requireAdmin, (req, res) => {
+    const removed = db.transaction(() => {
+      const link = db.prepare("SELECT id FROM links WHERE id=? AND target_url IS NOT NULL AND deleted_at IS NULL").get(req.params.id);
+      if (!link) return false;
+      db.prepare("UPDATE links SET deleted_at=?, active=0, password_hash=NULL, password_encrypted=NULL WHERE id=?").run(new Date().toISOString(), req.params.id);
+      return true;
+    })();
+    if (!removed) { res.status(404).json({error:"Not found"}); return; }
+    res.status(204).end();
+  });
+  app.patch("/api/links/:id", requireAdmin, async (req, res) => {
     const old = db
       .prepare(
-        "SELECT slug,target_url,active FROM links WHERE id=? AND target_url IS NOT NULL",
+        "SELECT slug,target_url,active,password_hash,expires_at,password_encrypted FROM links WHERE id=? AND target_url IS NOT NULL AND deleted_at IS NULL",
       )
       .get(req.params.id) as
-      | { slug: string; target_url: string; active: number }
+      | { slug: string; target_url: string; active: number; password_hash: string | null; expires_at: string | null; password_encrypted: string | null }
       | undefined;
     if (!old) {
       res.status(404).json({ error: "Not found" });
       return;
     }
     if (
-      (req.body?.active !== undefined &&
-        typeof req.body.active !== "boolean") ||
+      req.body?.active !== undefined ||
       (req.body?.slug !== undefined && typeof req.body.slug !== "string") ||
       (req.body?.url !== undefined && typeof req.body.url !== "string")
     ) {
@@ -358,8 +424,9 @@ export function createApp({
     }
     let slug: string, url: string;
     try {
+      validateLinkProtection(req.body);
       slug =
-        req.body?.slug === undefined ? old.slug : normalizeSlug(req.body.slug);
+        req.body?.slug === undefined ? old.slug : normalizeSlug(req.body.slug, true);
       url =
         req.body?.url === undefined
           ? old.target_url
@@ -370,17 +437,19 @@ export function createApp({
     }
     try {
       db.prepare(
-        "UPDATE links SET slug=?,target_url=?,active=? WHERE id=?",
+        "UPDATE links SET slug=?,target_url=?,password_hash=?,expires_at=?,password_encrypted=? WHERE id=?",
       ).run(
         slug,
         url,
-        req.body?.active === undefined ? old.active : req.body.active ? 1 : 0,
+        req.body.password === undefined ? old.password_hash : req.body.password ? await hashPassword(req.body.password, 1) : null,
+        req.body.expiresAt === undefined ? old.expires_at : req.body.expiresAt ? new Date(req.body.expiresAt).toISOString() : null,
+        req.body.password === undefined ? old.password_encrypted : req.body.password && passwordKey ? encryptLinkPassword(req.body.password,passwordKey,String(req.params.id)) : null,
         req.params.id,
       );
     } catch (error) {
       if (
         error instanceof Error &&
-        error.message.includes("UNIQUE constraint failed: links.slug")
+        error.message.includes("links.slug")
       ) {
         res.status(409).json({ error: "Slug already exists" });
         return;
@@ -389,22 +458,10 @@ export function createApp({
     }
     res.json({ ok: true });
   });
-  app.get("/r/:slug", (req, res) => {
-    const row = db
-      .prepare(
-        "SELECT id,target_url FROM links WHERE slug=? AND active=1 AND target_url IS NOT NULL",
-      )
-      .get(req.params.slug) as { id: string; target_url: string } | undefined;
-    if (!row) {
-      res.status(404).json({ error: "Not found" });
-      return;
-    }
-    db.prepare(
-      "INSERT INTO events(link_id,type,created_at,ip_address,user_agent,referrer_origin) VALUES (?,?,?,?,?,?)",
-    ).run(row.id, "redirect", new Date().toISOString(), ...visitorDetails(req));
-    res.redirect(302, row.target_url);
-  });
-  if (uploadRoot) app.use(uploadsRouter(uploadRoot, requireAdmin));
+  const access = linkAccess(db);
+  app.get("/r/:slug", access.open);
+  app.post("/api/link-access/:slug", rateLimit("link-unlock"), express.urlencoded({ extended: false, limit: "4kb" }), access.unlock);
+  if (uploadRoot) app.use(uploadsRouter(uploadRoot, requireAdmin, db));
   app.use(
     sharesRouter(
       db,
@@ -412,6 +469,7 @@ export function createApp({
       secureCookies,
       rateLimit("unlock"),
       rateLimit("browse", 120, 60_000),
+      previewCache,
     ),
   );
   if (frontendDir) {
@@ -423,22 +481,16 @@ export function createApp({
   app.get("/:slug", (req, res) => {
     const link = db
       .prepare(
-        "SELECT l.id,l.target_url,l.share_id FROM links l LEFT JOIN shares s ON s.id=l.share_id WHERE l.slug=? AND l.active=1 AND (l.target_url IS NOT NULL OR (s.active=1 AND (s.expires_at IS NULL OR s.expires_at>?)))",
+        "SELECT l.id,l.target_url,l.share_id FROM links l LEFT JOIN shares s ON s.id=l.share_id WHERE (l.slug=? OR (l.case_sensitive=0 AND l.slug=? COLLATE NOCASE)) AND l.active=1 AND (l.target_url IS NOT NULL OR (s.active=1 AND (s.expires_at IS NULL OR s.expires_at>?)))",
       )
-      .get(req.params.slug, new Date().toISOString()) as
+      .get(req.params.slug, req.params.slug, new Date().toISOString()) as
       | { id: string; target_url: string | null; share_id: string | null }
       | undefined;
     if (!link) {
       res.status(404).json({ error: "Not found" });
       return;
     }
-    if (link.target_url) {
-      db.prepare(
-        "INSERT INTO events(link_id,type,created_at,ip_address,user_agent,referrer_origin) VALUES (?,?,?,?,?,?)",
-      ).run(link.id, "redirect", new Date().toISOString(), ...visitorDetails(req));
-      res.redirect(302, link.target_url);
-      return;
-    }
+    if (link.target_url) { access.open(req, res, () => {}); return; }
     res.redirect(302, `/share/${encodeURIComponent(String(req.params.slug))}`);
   });
   app.use((_req, res) => {

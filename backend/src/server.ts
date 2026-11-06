@@ -1,6 +1,10 @@
-import { mkdirSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { configureSources } from "./sources";
+import { dataLayout } from "./data-layout";
+import { runRetention, getRetention } from "./retention";
+import { PreviewCache } from "./previews";
+import { resolve } from "node:path";
 import { openDatabase } from "./database";
+import { loadPasswordKey, decryptLinkPassword } from "./password-vault";
 import { createApp } from "./app";
 
 const publicOrigin = process.env.PUBLIC_ORIGIN;
@@ -20,67 +24,29 @@ if (
   !["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)
 )
   throw new Error("HTTP is allowed only on localhost");
-const dbPath = resolve(process.env.DB_PATH || "./.local-config/sharelyze.db");
-mkdirSync(dirname(dbPath), { recursive: true, mode: 0o700 });
+const {dbPath,uploadRoot,previewRoot,passwordKeyPath} = await dataLayout();
 const db = openDatabase(dbPath);
-const uploadRoot = resolve(process.env.UPLOAD_ROOT || resolve(dirname(dbPath), "uploads"));
-const retentionDays = Number(process.env.ANALYTICS_RETENTION_DAYS || "30");
+const previewCache = new PreviewCache(previewRoot);
+const encryptedExample = db.prepare("SELECT id,password_encrypted FROM links WHERE password_encrypted IS NOT NULL LIMIT 1").get() as {id:string;password_encrypted:string}|undefined;
+const passwordKey = loadPasswordKey(passwordKeyPath, !!encryptedExample);
+if(encryptedExample) decryptLinkPassword(encryptedExample.password_encrypted,passwordKey,encryptedExample.id);
+const retentionDays = process.env.ANALYTICS_RETENTION_DAYS ? Number(process.env.ANALYTICS_RETENTION_DAYS) : null;
 if (
+  retentionDays !== null && (
   !Number.isInteger(retentionDays) ||
   retentionDays < 1 ||
   retentionDays > 3650
+  )
 )
   throw new Error("Invalid ANALYTICS_RETENTION_DAYS");
-function clearOldEvents() {
-  db.prepare("DELETE FROM events WHERE created_at < ?").run(
-    new Date(Date.now() - retentionDays * 86400000).toISOString(),
-  );
+async function maintenance() {
+  try { runRetention(db,uploadRoot); await previewCache.clean(getRetention(db).previewDays); }
+  catch (error) { console.error("ShareLyze maintenance failed", error); }
 }
-clearOldEvents();
-setInterval(clearOldEvents, 86400000).unref();
-{
-  const sources: unknown = JSON.parse(process.env.SOURCES_JSON || "[]");
-  if (
-    !Array.isArray(sources) ||
-    sources.some(
-      (s: any) =>
-        !s ||
-        typeof s.id !== "string" ||
-        !/^[a-z0-9-]+$/.test(s.id) ||
-        typeof s.name !== "string" ||
-        !s.name ||
-        typeof s.root !== "string" ||
-        !s.root.startsWith("/"),
-    )
-  )
-    throw new Error(
-      "SOURCES_JSON must contain sources with an id, name and absolute root",
-    );
-  if (sources.some((s: any) => s.id === "sharelyze-uploads" || resolve(s.root) === uploadRoot || uploadRoot.startsWith(resolve(s.root) + "/") || resolve(s.root).startsWith(uploadRoot + "/")))
-    throw new Error("Upload storage must be separate from configured sources");
-  if (new Set(sources.map((s) => s.id)).size !== sources.length)
-    throw new Error("Duplicate source IDs");
-  mkdirSync(uploadRoot, { recursive: true, mode: 0o700 });
-  db.transaction(() => {
-    db.prepare("UPDATE sources SET active=0").run();
-    for (const s of [...sources, { id: "sharelyze-uploads", name: "Uploads", root: uploadRoot }]) {
-      const old = db
-        .prepare("SELECT root FROM sources WHERE id=?")
-        .get(s.id) as { root: string } | undefined;
-      if (
-        old &&
-        old.root !== s.root &&
-        db
-          .prepare("SELECT 1 FROM share_items WHERE source_id=? LIMIT 1")
-          .get(s.id)
-      )
-        throw new Error("Cannot change the root of a source used by a share");
-      db.prepare(
-        "INSERT INTO sources(id,name,root,active) VALUES (?,?,?,1) ON CONFLICT(id) DO UPDATE SET name=excluded.name,root=excluded.root,active=1",
-      ).run(s.id, s.name, s.root);
-    }
-  })();
-}
+
+configureSources(db,resolve(process.env.SOURCES_ROOT || "/sources"),uploadRoot);
+if (process.env.SOURCES_JSON !== undefined) console.warn("SOURCES_JSON is obsolete and ignored; use mounts beneath SOURCES_ROOT (/sources).");
+
 const trustedProxies = (process.env.TRUSTED_PROXIES || "")
   .split(",")
   .map((s) => s.trim())
@@ -92,12 +58,14 @@ const allowLoopbackAliases = process.env.SHARELYZE_LOCAL_DEV === "1";
 if (
   allowLoopbackAliases &&
   (process.env.NODE_ENV === "production" ||
-    !["127.0.0.1", "localhost", "::1"].includes(host))
+    (!["127.0.0.1", "localhost", "::1"].includes(host) && !(process.env.SHARELYZE_CONTAINER_DEV === "1" && host === "0.0.0.0")))
 )
   throw new Error("Local development aliases require a loopback-only backend");
 const app = createApp({
   db,
+  previewCache,
   uploadRoot,
+  passwordKey,
   publicOrigin,
   setupToken,
   secureCookies: url.protocol === "https:",
@@ -108,6 +76,8 @@ const app = createApp({
   allowLoopbackAliases,
   developmentOrigins: allowLoopbackAliases ? JSON.parse(process.env.SHARELYZE_DEV_ORIGINS || "[]") : [],
 });
+void maintenance().then(() => previewCache.warm(db));
+setInterval(() => {void maintenance().then(() => previewCache.warm(db));}, 60 * 60 * 1000).unref();
 const port = Number(process.env.BACKEND_PORT || "3000");
 app.listen(port, host, () =>
   console.log(`ShareLyze development API listening on ${host}:${port}`),

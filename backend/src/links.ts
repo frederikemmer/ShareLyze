@@ -12,12 +12,12 @@ const reserved = new Set([
   "favicon.ico",
 ]);
 
-/** Canonical slugs are ASCII, case insensitive and never occupy application routes. */
-export function normalizeSlug(value: string): string {
-  const slug = value.trim().toLowerCase();
+/** Slugs are ASCII and never occupy application routes, regardless of case. */
+export function normalizeSlug(value: string, preserveCase = false): string {
+  const slug = preserveCase ? value.trim() : value.trim().toLowerCase();
   if (
-    !/^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/.test(slug) ||
-    reserved.has(slug)
+    !/^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/i.test(slug) ||
+    reserved.has(slug.toLowerCase())
   ) {
     throw new Error("Invalid or reserved slug");
   }

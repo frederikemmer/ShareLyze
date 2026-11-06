@@ -6,7 +6,7 @@ export function openDatabase(filename: string): Database.Database {
   db.pragma("foreign_keys = ON");
   db.pragma("journal_mode = WAL");
   const version = db.pragma("user_version", { simple: true }) as number;
-  if (version > 7) {
+  if (version > 13) {
     db.close();
     throw new Error("Database version is newer than this application");
   }
@@ -54,5 +54,11 @@ export function openDatabase(filename: string): Database.Database {
       db.exec("ALTER TABLE events ADD COLUMN ip_address TEXT; ALTER TABLE events ADD COLUMN user_agent TEXT; ALTER TABLE events ADD COLUMN referrer_origin TEXT; PRAGMA user_version = 6;");
     })();
   if (version < 7) db.transaction(() => { db.exec("ALTER TABLE shares ADD COLUMN description TEXT; PRAGMA user_version = 7;"); })();
+  if (version < 8) db.transaction(() => { db.exec("ALTER TABLE links ADD COLUMN password_hash TEXT; ALTER TABLE links ADD COLUMN expires_at TEXT; PRAGMA user_version = 8;"); })();
+  if (version < 9) db.transaction(() => { db.exec(`ALTER TABLE links ADD COLUMN case_sensitive INTEGER NOT NULL DEFAULT 0 CHECK(case_sensitive IN (0,1)); CREATE UNIQUE INDEX "links.slug_folded" ON links(lower(slug)); PRAGMA user_version = 9;`); })();
+  if (version < 10) db.transaction(() => { db.exec("ALTER TABLE links ADD COLUMN password_encrypted TEXT; PRAGMA user_version = 10;"); })();
+  if (version < 11) db.transaction(() => { db.exec("UPDATE links SET expires_at=CASE WHEN expires_at IS NULL OR expires_at > '1970-01-01T00:00:00.000Z' THEN '1970-01-01T00:00:00.000Z' ELSE expires_at END, active=1 WHERE target_url IS NOT NULL AND active=0; PRAGMA user_version = 11;"); })();
+  if (version < 12) db.transaction(() => { db.exec("ALTER TABLE links ADD COLUMN deleted_at TEXT; PRAGMA user_version = 12;"); })();
+  if (version < 13) db.transaction(() => { db.exec("ALTER TABLE shares ADD COLUMN deleted_at TEXT; ALTER TABLE shares ADD COLUMN purged_at TEXT; PRAGMA user_version = 13;"); })();
   return db;
 }

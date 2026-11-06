@@ -2,7 +2,7 @@ import { Router, type Request, type RequestHandler } from "express";
 import type Database from "better-sqlite3";
 import { randomUUID } from "node:crypto";
 import { basename } from "node:path";
-import { closeSync, createReadStream, fstatSync, type Stats } from "node:fs";
+import { closeSync, createReadStream, fstatSync, readSync, type Stats } from "node:fs";
 import { ZipFile } from "yazl";
 import { Readable } from "node:stream";
 import {
@@ -11,14 +11,17 @@ import {
   hashPassword,
   verifyPassword,
 } from "./auth";
-import { normalizeSlug, randomSlug } from "./links";
+import { normalizeSlug } from "./links";
+import { getSlugSettings, suggestSlug } from "./slug-settings";
 import {
   DirectoryLimitError,
   listSourceDirectory,
+  measureSourceItem,
   openSourceFile,
 } from "./storage";
 import { parseRange } from "./range";
 import { visitorDetails } from "./analytics";
+import { PreviewCache, previewPattern } from "./previews";
 
 type Source = { id: string; name: string; root: string };
 type Item = {
@@ -49,6 +52,32 @@ const sameFile = (a: Stats, b: Stats) =>
   a.size === b.size &&
   a.mtimeMs === b.mtimeMs &&
   a.ctimeMs === b.ctimeMs;
+function imageContentType(fd: number): string | null {
+  const bytes = Buffer.alloc(16);
+  const n = readSync(fd, bytes, 0, bytes.length, 0);
+  if (n >= 3 && bytes.subarray(0, 3).equals(Buffer.from([255, 216, 255]))) return "image/jpeg";
+  if (n >= 8 && bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) return "image/png";
+  if (n >= 6 && ["GIF87a", "GIF89a"].includes(bytes.toString("ascii", 0, 6))) return "image/gif";
+  if (n >= 12 && bytes.toString("ascii", 0, 4) === "RIFF" && bytes.toString("ascii", 8, 12) === "WEBP") return "image/webp";
+  if (n >= 12 && bytes.toString("ascii", 4, 8) === "ftyp" && ["avif", "avis"].includes(bytes.toString("ascii", 8, 12))) return "image/avif";
+  return null;
+}
+function videoContentType(fd: number, path: string): string | null {
+  const bytes = Buffer.alloc(16);
+  const n = readSync(fd, bytes, 0, bytes.length, 0);
+  const ext = path.toLowerCase().split(".").pop();
+  if (n >= 12 && bytes.toString("ascii", 4, 8) === "ftyp" && !imageContentType(fd)) {
+    if (ext === "mp4" || ext === "m4v") return "video/mp4";
+    if (ext === "mov") return "video/quicktime";
+  }
+  if (n >= 4 && bytes.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]))) {
+    if (ext === "webm") return "video/webm";
+    if (ext === "mkv") return "video/x-matroska";
+  }
+  if (ext === "ogv" && n >= 4 && bytes.toString("ascii", 0, 4) === "OggS") return "video/ogg";
+  if (ext === "avi" && n >= 12 && bytes.toString("ascii", 0, 4) === "RIFF" && bytes.toString("ascii", 8, 12) === "AVI ") return "video/x-msvideo";
+  return null;
+}
 
 export function sharesRouter(
   db: Database.Database,
@@ -56,10 +85,13 @@ export function sharesRouter(
   secureCookies: boolean,
   rateLimit: RequestHandler,
   browseLimit: RequestHandler,
+  previewCache = new PreviewCache(),
 ) {
   const router = Router();
   let activeZips = 0;
   let activeDownloads = 0;
+  let activePreviews = 0;
+  let activeMeasurements = 0;
   const source = (id: string) =>
     db
       .prepare("SELECT id,name,root FROM sources WHERE id=? AND active=1")
@@ -67,9 +99,9 @@ export function sharesRouter(
   const find = (slug: string): Share | undefined =>
     db
       .prepare(
-        `SELECT s.*, l.id AS link_id FROM links l JOIN shares s ON s.id=l.share_id WHERE l.slug=? AND l.active=1 AND s.active=1 AND (s.expires_at IS NULL OR s.expires_at>?)`,
+        `SELECT s.*, l.id AS link_id FROM links l JOIN shares s ON s.id=l.share_id WHERE (l.slug=? OR (l.case_sensitive=0 AND l.slug=? COLLATE NOCASE)) AND l.active=1 AND l.deleted_at IS NULL AND s.active=1 AND s.deleted_at IS NULL AND (s.expires_at IS NULL OR s.expires_at>?)`,
       )
-      .get(slug, new Date().toISOString()) as Share | undefined;
+      .get(slug, slug, new Date().toISOString()) as Share | undefined;
   const items = (shareId: string) => {
     const found = db
       .prepare(
@@ -139,11 +171,23 @@ export function sharesRouter(
       });
     }
   });
+  router.get("/api/sources/:id/size", admin, async (req, res) => {
+    const s = source(String(req.params.id));
+    const path = typeof req.query.path === "string" ? req.query.path : "";
+    const kind = req.query.kind;
+    if (!s || (kind !== "file" && kind !== "directory") || !validPath(path, kind === "directory")) {
+      res.status(400).json({ error: "Invalid source or path" }); return;
+    }
+    const controller = new AbortController();
+    res.on("close", () => { if (!res.writableEnded) controller.abort(); });
+    try { res.json(await measureSourceItem(s.root, path, kind, controller.signal)); }
+    catch (error) { if (!res.destroyed) res.status(error instanceof DirectoryLimitError ? 413 : 404).json({ error: "Size unavailable" }); }
+  });
   router.get("/api/shares", admin, (_req, res) => {
     res.json({
       shares: db
         .prepare(
-          "SELECT s.id,s.title,s.description,s.active,s.expires_at,s.password_hash IS NOT NULL AS has_password,s.created_at,l.slug FROM shares s JOIN links l ON l.share_id=s.id ORDER BY s.created_at DESC",
+          "SELECT s.id,s.title,s.description,s.active,s.expires_at,s.password_hash IS NOT NULL AS has_password,s.created_at,l.slug FROM shares s JOIN links l ON l.share_id=s.id WHERE s.deleted_at IS NULL ORDER BY s.created_at DESC",
         )
         .all(),
     });
@@ -202,7 +246,7 @@ export function sharesRouter(
     }
     let short: string;
     try {
-      short = slug ? normalizeSlug(slug) : randomSlug();
+      short = slug ? normalizeSlug(slug, true) : suggestSlug(db);
     } catch {
       res.status(400).json({ error: "Invalid slug" });
       return;
@@ -255,24 +299,35 @@ export function sharesRouter(
         for (const item of selected)
           insert.run(randomUUID(), id, item.sourceId, item.path, item.kind);
         db.prepare(
-          "INSERT INTO links(id,slug,share_id,created_at) VALUES (?,?,?,?)",
-        ).run(linkId, short, id, new Date().toISOString());
+          "INSERT INTO links(id,slug,share_id,created_at,case_sensitive) VALUES (?,?,?,?,?)",
+        ).run(linkId, short, id, new Date().toISOString(), getSlugSettings(db).caseSensitive ? 1 : 0);
       })();
     } catch (e) {
       if (
         e instanceof Error &&
-        e.message.includes("UNIQUE constraint failed: links.slug")
+        e.message.includes("links.slug")
       ) {
         res.status(409).json({ error: "Slug already exists" });
         return;
       }
       throw e;
     }
+    void previewCache.warm(db);
     res.status(201).json({ id, slug: short });
+  });
+  router.delete("/api/shares/:id", admin, (req,res) => {
+    db.transaction(() => {
+      const timestamp = new Date().toISOString();
+      const changed = db.prepare("UPDATE shares SET deleted_at=?,active=0,password_hash=NULL WHERE id=? AND deleted_at IS NULL").run(timestamp,req.params.id);
+      if (!changed.changes) {res.sendStatus(404);return;}
+      db.prepare("UPDATE links SET active=0,deleted_at=? WHERE share_id=?").run(timestamp,req.params.id);
+      db.prepare("DELETE FROM share_grants WHERE share_id=?").run(req.params.id);
+      res.json({ok:true});
+    })();
   });
   router.patch("/api/shares/:id", admin, async (req, res) => {
     const old = db
-      .prepare("SELECT * FROM shares WHERE id=?")
+      .prepare("SELECT * FROM shares WHERE id=? AND deleted_at IS NULL")
       .get(req.params.id) as
       | {
           title: string;
@@ -309,7 +364,7 @@ export function sharesRouter(
     }
     let normalized: string | undefined;
     try {
-      normalized = slug === undefined ? undefined : normalizeSlug(slug);
+      normalized = slug === undefined ? undefined : normalizeSlug(slug, true);
     } catch {
       res.status(400).json({ error: "Invalid slug" });
       return;
@@ -357,6 +412,7 @@ export function sharesRouter(
         : password === null
           ? null
           : await hashPassword(password);
+    if (!db.prepare("SELECT 1 FROM shares WHERE id=? AND deleted_at IS NULL").get(req.params.id)) {res.sendStatus(404);return;}
     try {
       db.transaction(() => {
         db.prepare(
@@ -422,13 +478,14 @@ export function sharesRouter(
     } catch (e) {
       if (
         e instanceof Error &&
-        e.message.includes("UNIQUE constraint failed: links.slug")
+        e.message.includes("links.slug")
       ) {
         res.status(409).json({ error: "Slug already exists" });
         return;
       }
       throw e;
     }
+    void previewCache.warm(db);
     res.json({ ok: true });
   });
   router.post("/api/public/:slug/unlock", rateLimit, async (req, res) => {
@@ -444,6 +501,8 @@ export function sharesRouter(
       res.status(401).json({ error: "Invalid password" });
       return;
     }
+    const current = find(String(req.params.slug));
+    if (!current || current.password_hash !== share.password_hash) {res.sendStatus(404);return;}
     const token = createSessionToken(),
       expires = new Date(Date.now() + 60 * 60 * 1000);
     db.prepare("DELETE FROM share_grants WHERE expires_at<=?").run(
@@ -513,6 +572,76 @@ export function sharesRouter(
             : "Not found",
       });
     }
+  });
+  router.get("/api/public/:slug/items/:itemId/size", async (req, res) => {
+    const share = find(String(req.params.slug));
+    if (!share || !granted(share, req.headers.cookie)) { res.sendStatus(404); return; }
+    const sub = typeof req.query.path === "string" ? req.query.path : "";
+    const target = resolveItem(share, String(req.params.itemId), sub);
+    if (!target || (sub && target.item.kind !== "directory")) { res.sendStatus(404); return; }
+    const kind = req.query.kind;
+    if (kind !== "file" && kind !== "directory") { res.sendStatus(400); return; }
+    if (!sub && kind !== target.item.kind) { res.sendStatus(404); return; }
+    if (activeMeasurements >= 8) { res.set("Retry-After", "2").sendStatus(503); return; }
+    const controller = new AbortController();
+    res.on("close", () => { if (!res.writableEnded) controller.abort(); });
+    activeMeasurements++;
+    try { res.json(await measureSourceItem(target.item.root, target.path, kind, controller.signal)); }
+    catch (error) { if (!res.destroyed) res.sendStatus(error instanceof DirectoryLimitError ? 413 : 404); }
+    finally { activeMeasurements--; }
+  });
+  router.get("/api/public/:slug/items/:itemId/preview", async (req, res) => {
+    const share = find(String(req.params.slug));
+    if (!share || !granted(share, req.headers.cookie)) { res.sendStatus(404); return; }
+    const sub = typeof req.query.path === "string" ? req.query.path : "";
+    const target = resolveItem(share, String(req.params.itemId), sub);
+    if (!target || !previewPattern.test(target.path)) {res.sendStatus(404);return;}
+    if (activePreviews >= 32) {res.set("Retry-After","5").sendStatus(503);return;}
+    activePreviews++;
+    try {
+      const buffer = await previewCache.get(target.item.root,target.path);
+      // Recheck after background work: a share may have been deleted meanwhile.
+      const current = find(String(req.params.slug));
+      if (!current || !granted(current,req.headers.cookie)) {res.sendStatus(404);return;}
+      if (!res.destroyed) res.type("image/jpeg").set("Content-Security-Policy","default-src 'none'; sandbox").send(buffer);
+    } catch {if (!res.destroyed) res.sendStatus(404);}
+    finally {activePreviews--;}
+  });
+  router.get("/api/public/:slug/items/:itemId/view", async (req, res) => {
+    const share = find(String(req.params.slug));
+    if (!share || !granted(share, req.headers.cookie)) { res.sendStatus(404); return; }
+    const sub = typeof req.query.path === "string" ? req.query.path : "";
+    const target = resolveItem(share, String(req.params.itemId), sub);
+    if (target && previewPattern.test(target.path) && !/\.(jpe?g|png|webp|gif|avif)$/i.test(target.path)) {
+      try {
+        const output = await previewCache.get(target.item.root,target.path);
+        const current = find(String(req.params.slug));
+        if (!current || !granted(current,req.headers.cookie)) {res.sendStatus(404);return;}
+        res.type("image/jpeg").set("Content-Security-Policy","default-src 'none'; sandbox").send(output);
+      } catch {res.sendStatus(404);}
+      return;
+    }
+    if (!target || !/\.(jpe?g|png|webp|gif|avif|mp4|m4v|mov|webm|mkv|ogv|avi)$/i.test(target.path)) { res.sendStatus(404); return; }
+    if (activeDownloads >= 32) { res.set("Retry-After", "5").sendStatus(503); return; }
+    let fd: number;
+    try { fd = openSourceFile(target.item.root, target.path); } catch { res.sendStatus(404); return; }
+    let type: string | null;
+    let size: number;
+    let stat: Stats;
+    try { type = imageContentType(fd) || videoContentType(fd, target.path); stat = fstatSync(fd); size = stat.size; } catch { closeSync(fd); res.sendStatus(404); return; }
+    if (!type) { closeSync(fd); res.sendStatus(404); return; }
+    const etag = `"${stat.dev.toString(16)}-${stat.ino.toString(16)}-${size.toString(16)}-${stat.mtimeMs.toString(16)}-${stat.ctimeMs.toString(16)}"`;
+    const header = req.get("range"), ifRange = req.get("if-range");
+    const range = header && (!ifRange || ifRange === etag) ? parseRange(header, size) : null;
+    if (header && (!ifRange || ifRange === etag) && !range) { closeSync(fd); res.set("Content-Range", `bytes */${size}`).status(416).end(); return; }
+    res.set({ "Content-Type": type, "Content-Length": String(range ? range.end - range.start + 1 : size), "Content-Disposition": "inline", "Content-Security-Policy": "default-src 'none'; sandbox", "X-Content-Type-Options": "nosniff", "Accept-Ranges": "bytes", ETag: etag });
+    if (range) res.status(206).set("Content-Range", `bytes ${range.start}-${range.end}/${size}`);
+    if (req.method === "HEAD") { closeSync(fd); res.end(); return; }
+    activeDownloads++;
+    const stream = createReadStream("", {fd, autoClose:true, ...(range ? {start:range.start, end:range.end} : {})});
+    stream.on("error", () => res.destroy());
+    res.on("close", () => { activeDownloads--; stream.destroy(); });
+    stream.pipe(res);
   });
   router.get("/api/public/:slug/items/:itemId/download", (req, res) => {
     const share = find(String(req.params.slug));
@@ -616,7 +745,7 @@ export function sharesRouter(
     });
     stream.pipe(res);
   });
-  router.get("/api/public/:slug/zip", (req, res) => {
+  router.get(["/api/public/:slug/zip", "/api/public/:slug/items/:itemId/zip"], (req, res) => {
     if (req.method === "HEAD") {
       res.status(405).set("Allow", "GET").end();
       return;
@@ -626,6 +755,9 @@ export function sharesRouter(
       res.status(404).json({ error: "Not found" });
       return;
     }
+    const sub = typeof req.query.path === "string" ? req.query.path : "";
+    const selected = req.params.itemId ? resolveItem(share, String(req.params.itemId), sub) : null;
+    if ((req.params.itemId && (!selected || selected.item.kind !== "directory")) || (!req.params.itemId && sub)) { res.sendStatus(404); return; }
     if (activeZips >= 3) {
       res
         .status(503)
@@ -705,7 +837,10 @@ export function sharesRouter(
           },
         );
       }
-      for (const [index, item] of items(share.id).entries()) {
+      if (selected) {
+        const name = basename(selected.path) || source(selected.item.source_id)?.name || "folder";
+        add(selected.item, selected.path, name, 0);
+      } else for (const [index, item] of items(share.id).entries()) {
         const name = `${index + 1}-${item.relative_path ? basename(item.relative_path) : (source(item.source_id)?.name ?? "folder")}`;
         if (item.kind === "directory") add(item, item.relative_path, name, 0);
         else addFile(item, item.relative_path, name);
@@ -728,7 +863,7 @@ export function sharesRouter(
     };
     res.set({
       "Content-Type": "application/zip",
-      "Content-Disposition": 'attachment; filename="sharelyze.zip"',
+      "Content-Disposition": selected ? `attachment; filename="sharelyze.zip"; filename*=UTF-8''${encodeURIComponent((basename(selected.path) || "folder") + ".zip").replace(/['()*]/g, c => "%" + c.charCodeAt(0).toString(16).toUpperCase())}` : 'attachment; filename="sharelyze.zip"',
     });
     event(req, share, "zip_start");
     zip.outputStream.on("error", () => res.destroy());

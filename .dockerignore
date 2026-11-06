@@ -2,5 +2,10 @@
 node_modules
 dist
 .local-config
+.local-test-files
 data
 .env
+
+**/link-password.key
+
+.local-sources/

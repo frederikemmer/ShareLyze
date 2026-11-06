@@ -56,6 +56,26 @@ export function openSourceFile(root: string, relativePath: string): number {
   return openBeneath(root, relativePath, false);
 }
 export class DirectoryLimitError extends Error {}
+/** Snapshot of accessible regular files, using the same no-symlink traversal as downloads. */
+export async function measureSourceItem(root: string, relativePath: string, kind: "file" | "directory", signal?: AbortSignal): Promise<{ fileCount: number; totalBytes: number }> {
+  const pending = [{ path: relativePath, kind }];
+  let fileCount = 0, totalBytes = 0, visited = 0;
+  while (pending.length) {
+    if (signal?.aborted) throw new Error("Measurement cancelled");
+    const item = pending.pop()!;
+    if (++visited > 100000) throw new DirectoryLimitError("Too many entries");
+    if (item.kind === "file") {
+      const fd = openSourceFile(root, item.path);
+      try { totalBytes += fstatSync(fd).size; fileCount++; } finally { closeSync(fd); }
+    } else {
+      const children = listSourceDirectory(root, item.path);
+      if (visited + pending.length + children.length > 100000) throw new DirectoryLimitError("Too many entries");
+      for (const child of children) pending.push({ path: [item.path, child.name].filter(Boolean).join("/"), kind: child.kind });
+    }
+    if (visited % 100 === 0) await new Promise<void>(resolve => setImmediate(resolve));
+  }
+  return { fileCount, totalBytes };
+}
 export function listSourceDirectory(
   root: string,
   relativePath = "",

@@ -5,15 +5,18 @@ COPY package.json package-lock.json ./
 RUN npm ci
 COPY tsconfig.json ./
 COPY backend ./backend
+COPY shared ./shared
 COPY frontend ./frontend
 RUN npm run build
 
 FROM node:24-bookworm-slim
-ENV NODE_ENV=production BACKEND_HOST=0.0.0.0 BACKEND_PORT=3000 DB_PATH=/data/sharelyze.db FRONTEND_DIR=/app/dist/frontend
+ENV NODE_ENV=production BACKEND_HOST=0.0.0.0 BACKEND_PORT=3000 DATA_ROOT=/data FRONTEND_DIR=/app/dist/frontend
 WORKDIR /app
-RUN apt-get update && apt-get install -y --no-install-recommends gosu && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends gosu fontconfig fonts-dejavu-core && rm -rf /var/lib/apt/lists/*
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
+COPY --from=build --chown=node:node /app/package.json ./package.json
 COPY --from=build --chown=node:node /app/backend ./backend
+COPY --from=build --chown=node:node /app/shared ./shared
 COPY --from=build --chown=node:node /app/dist ./dist
 RUN mkdir -p /data && chown node:node /data
 COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/sharelyze-entrypoint

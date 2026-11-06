@@ -9,8 +9,8 @@ import { promisify } from "node:util";
 const scrypt = promisify(scryptCallback);
 
 /** Password hashes are versioned so the work factor can be upgraded later. */
-export async function hashPassword(password: string): Promise<string> {
-  if (password.length < 12 || Buffer.byteLength(password, "utf8") > 1024)
+export async function hashPassword(password: string, minimumLength = 12): Promise<string> {
+  if (password.length < minimumLength || Buffer.byteLength(password, "utf8") > 1024)
     throw new Error("Invalid password length");
   const salt = randomBytes(16);
   const derived = (await scrypt(password, salt, 64)) as Buffer;

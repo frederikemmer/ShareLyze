@@ -14,13 +14,13 @@ services:
       PGID: ${PGID:-1000}
       PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?Set PUBLIC_ORIGIN to the external HTTPS origin}
       SETUP_TOKEN: ${SETUP_TOKEN:?Set a random setup token of at least 32 characters}
-      ANALYTICS_RETENTION_DAYS: ${ANALYTICS_RETENTION_DAYS:-30}
+      ANALYTICS_RETENTION_DAYS: ${ANALYTICS_RETENTION_DAYS:-}
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
-      SOURCES_JSON: '[{"id":"mediathek","name":"Mediathek","root":"/share/Mediathek"},{"id":"fe","name":"FE","root":"/share/FE"}]'
     volumes:
-      - ${CONFIG_HOST_DIR:-./config}:/data
-      - ${MEDIATHEK_HOST_DIR:-/volume1/Mediathek}:/share/Mediathek:ro
-      - ${FE_HOST_DIR:-/volume1/FE}:/share/FE:ro
+      - ${DATA_HOST_DIR:-./data}:/data
+      # Optional separate mounts: /data/config, /data/database, /data/uploads, /data/previews
+      - ${MEDIATHEK_HOST_DIR:-/volume1/Mediathek}:/sources/Mediathek:ro
+      - ${FE_HOST_DIR:-/volume1/FE}:/sources/FE:ro
 
 networks:
   docker_bridge:

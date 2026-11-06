@@ -14,6 +14,7 @@ import {
   DirectoryLimitError,
   listSourceDirectory,
   openSourceFile,
+  measureSourceItem,
 } from "../src/storage";
 import { execFileSync, spawn } from "node:child_process";
 import { once } from "node:events";
@@ -21,6 +22,18 @@ import { once } from "node:events";
 describe.skipIf(process.platform !== "linux")(
   "Linux descriptor-based storage access",
   () => {
+    it("measures nested regular files without following symlinks", async () => {
+      const root = mkdtempSync(join(tmpdir(), "sharelyze-size-"));
+      try {
+        mkdirSync(join(root, "nested"));
+        writeFileSync(join(root, "a"), "abc");
+        writeFileSync(join(root, "nested", "b"), "12345");
+        symlinkSync("/etc/passwd", join(root, "ignored"));
+        expect(await measureSourceItem(root, "", "directory")).toEqual({fileCount: 2, totalBytes: 8});
+        expect(await measureSourceItem(root, "a", "file")).toEqual({fileCount: 1, totalBytes: 3});
+        await expect(measureSourceItem(root, "ignored", "file")).rejects.toThrow();
+      } finally { rmSync(root, { recursive: true, force: true }); }
+    });
     it("opens regular files beneath the root and rejects traversal and symlinks", () => {
       const root = mkdtempSync(join(tmpdir(), "sharelyze-storage-"));
       try {

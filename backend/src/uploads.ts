@@ -1,3 +1,6 @@
+import type Database from "better-sqlite3";
+import { getUploadSettings } from "./upload-settings";
+import { isUploadIgnored } from "../../shared/upload-filter";
 import { Router, type RequestHandler } from "express";
 import { randomUUID } from "node:crypto";
 import { constants, createWriteStream, mkdirSync, openSync, closeSync, unlinkSync } from "node:fs";
@@ -5,10 +8,16 @@ import { join } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { Transform } from "node:stream";
 
+import { activeUploadBatches } from "./retention";
+
 // Upload directories are private to ShareLyze and must not be writable by other users.
-export function uploadsRouter(root: string, admin: RequestHandler) {
+export function uploadsRouter(root: string, admin: RequestHandler, db: Database.Database) {
   const router = Router();
   router.post("/api/uploads", admin, (_req, res) => {
+    if (process.platform !== "linux") {
+      res.status(501).json({ error: "Upload storage requires Linux" });
+      return;
+    }
     const id = randomUUID();
     try { mkdirSync(join(root, id), { mode: 0o700 }); res.status(201).json({ id }); }
     catch { res.status(500).json({ error: "Upload storage unavailable" }); }
@@ -21,6 +30,12 @@ export function uploadsRouter(root: string, admin: RequestHandler) {
       res.status(400).json({ error: "Invalid upload path" }); return;
     }
     if (req.get("content-type") !== "application/octet-stream") { res.status(415).json({ error: "Invalid upload type" }); return; }
+    if (isUploadIgnored(name,getUploadSettings(db))) {
+      req.resume();
+      res.json({skipped:true,reason:"ignored"});
+      return;
+    }
+    activeUploadBatches.set(id,(activeUploadBatches.get(id) ?? 0)+1);
     const descriptors: number[] = [];
     let outputPath = "";
     let created = false;
@@ -42,7 +57,7 @@ export function uploadsRouter(root: string, admin: RequestHandler) {
     } catch (error) {
       if (created) try { unlinkSync(outputPath); } catch { /* best effort */ }
       if (!res.headersSent && !res.destroyed) res.status((error as NodeJS.ErrnoException).code === "EEXIST" ? 409 : 400).json({ error: "Upload failed" });
-    } finally { for (const fd of descriptors.reverse()) closeSync(fd); }
+    } finally { const remaining=(activeUploadBatches.get(id) ?? 1)-1; if(remaining) activeUploadBatches.set(id,remaining); else activeUploadBatches.delete(id); for (const fd of descriptors.reverse()) closeSync(fd); }
   });
   return router;
 }

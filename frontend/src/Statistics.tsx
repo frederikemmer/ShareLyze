@@ -1,3 +1,5 @@
+import type { DateTimeSettings } from "../../backend/src/date-time-settings";
+import { formatTimestamp, resolvedDateTime } from "./date-time";
 import { useMemo, useState } from "react";
 
 export type Analytics = {
@@ -29,7 +31,8 @@ function describeAgent(agent: string | null) {
   const device = /iPad|Tablet/i.test(agent) ? "Tablet" : /Mobile|iPhone/i.test(agent) ? "Mobilgerät" : "Gerät nicht sicher bestimmbar";
   return `${name}${browser && name !== "Unbekannter Browser" ? " " + browser[1] : ""} · ${os} · ${device}`;
 }
-export function Statistics({ data }: { data: Analytics | null }) {
+export function Statistics({ data, dateTimeSettings }: { data: Analytics | null; dateTimeSettings: DateTimeSettings }) {
+  const locale = resolvedDateTime(dateTimeSettings, navigator.language).locale;
   const [slug, setSlug] = useState("all");
   const [metric, setMetric] = useState("view");
   const choices = useMemo(
@@ -87,7 +90,7 @@ export function Statistics({ data }: { data: Analytics | null }) {
           (k) => (
             <div className="stat-cell" key={k}>
               <span>{labels[k]}</span>
-              <strong>{count(k).toLocaleString("de-DE")}</strong>
+              <strong>{count(k).toLocaleString(locale)}</strong>
             </div>
           ),
         )}
@@ -148,7 +151,7 @@ export function Statistics({ data }: { data: Analytics | null }) {
         {(data?.recent ?? []).filter((e) => slug === "all" || e.slug === slug).map((e) => (
           <div className="visitor-event" key={e.id}>
             <strong>{labels[e.type] ?? e.type} · {e.slug}</strong>
-            <div>{new Date(e.created_at).toLocaleString("de-DE")} · IP: {e.ip_address ?? "Unbekannt"}</div>
+            <div>{formatTimestamp(e.created_at, dateTimeSettings, navigator.language)} · IP: {e.ip_address ?? "Unbekannt"}</div>
             <div>Browser / Gerät: {describeAgent(e.user_agent)}</div>
             {e.user_agent && <details><summary>Vollständiger User-Agent</summary>{e.user_agent}</details>}
             <div>Herkunft: {e.referrer_origin ?? "Unbekannt"}</div>

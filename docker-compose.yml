@@ -9,12 +9,10 @@ services:
       PGID: ${PGID:-1000}
       PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?Set PUBLIC_ORIGIN to the HTTPS public origin}
       SETUP_TOKEN: ${SETUP_TOKEN:?Set a random setup token of at least 32 characters}
-      SOURCES_JSON: ${SOURCES_JSON:-[]}
-      ANALYTICS_RETENTION_DAYS: ${ANALYTICS_RETENTION_DAYS:-30}
+      ANALYTICS_RETENTION_DAYS: ${ANALYTICS_RETENTION_DAYS:-}
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
     volumes:
-      - sharelyze-data:/data
-      # Add your own sources below and reference container paths in SOURCES_JSON.
+      - ${DATA_HOST_DIR:-./data}:/data
+      # Optional separate mounts: /data/config, /data/database, /data/uploads, /data/previews
+      # Add read-only sources below; the directory name becomes the source name.
       # - /your/nas/files:/sources/files:ro
-volumes:
-  sharelyze-data:
