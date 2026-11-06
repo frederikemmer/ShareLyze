@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   mkdtempSync,
   mkdirSync,
@@ -108,6 +108,9 @@ describe.skipIf(process.platform !== "linux")(
           .get(`/api/public/multi/items/${mixed.body.items[1].id}/download`)
           .expect(200);
         expect(second.body.toString()).toBe("source two");
+        await vi.waitFor(() => {
+          expect(db.prepare("SELECT 1 FROM events WHERE type='transfer_finished' AND item_id=?").get(mixed.body.items[1].id)).toBeTruthy();
+        },{timeout:1000,interval:5});
       } finally {
         db.close();
         rmSync(root, { recursive: true, force: true });

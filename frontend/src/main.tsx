@@ -1,3 +1,4 @@
+import { startPublicTelemetry,publicCampaignQuery,reportPublicResourceError,withPublicVisit } from "./public-telemetry";
 import { isUploadIgnored, type UploadSettings } from "../../shared/upload-filter";
 import { StorageSettings } from "./StorageSettings";
 import React, { useEffect, useRef, useState } from "react";
@@ -15,7 +16,7 @@ import { Notifications, type Notification } from "./Notifications";
 import { version } from "../../package.json";
 import { motion, useReducedMotion } from "motion/react";
 import {
-  BarChart3, CircleAlert,
+  BarChart3, CircleAlert, QrCode,
   Download, CalendarDays,
   File, Files, Image as ImageIcon, LayoutGrid, List, ListCollapse, ChevronDown, ChevronLeft, ChevronRight, Film,
   Folder,
@@ -27,6 +28,8 @@ import {
   Share2,
   UserRound,
 } from "lucide-react";
+
+const QrCodes = React.lazy(() => import("./QrCodes").then(module => ({default:module.QrCodes})));
 
 function ActionIcon({ kind }: { kind: "external" | "copy" | "pen" }) {
   return <svg className={`action-icon action-icon-${kind}`} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -49,7 +52,7 @@ function HardDriveUploadIcon() {
 function PublicImage({ src, name, onOpen }: { src: string; name: string; onOpen: () => void }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [src]);
-  return <button type="button" className="public-image" aria-label={`${name} groß anzeigen`} disabled={failed} onClick={onOpen}>{failed ? <ImageIcon size={32} aria-hidden="true" /> : <img src={src} alt="" loading="lazy" decoding="async" onError={() => setFailed(true)} />}</button>;
+  return <button type="button" className="public-image" aria-label={`${name} groß anzeigen`} disabled={failed} onClick={onOpen}>{failed ? <ImageIcon size={32} aria-hidden="true" /> : <img src={src} alt="" loading="lazy" decoding="async" onError={() => {setFailed(true);reportPublicResourceError(src);}} />}</button>;
 }
 
 type ViewerMedia = { name: string; view: string; download: string; size: string; kind: "image" | "video" };
@@ -67,7 +70,7 @@ function PublicMediaViewer({ media, index, onMove, onClose }: { media: ViewerMed
     <div className="public-image-dialog-content"><div className="public-viewer-stage">
       <button type="button" className="public-viewer-close public-viewer-action" aria-label="Vorschau schließen" onClick={() => dialog.current?.close()} autoFocus><X size={22} aria-hidden="true"/></button>
       {index > 0 && <button type="button" className="public-viewer-prev public-viewer-action" aria-label="Vorheriges Medium" onClick={() => onMove(index - 1)}><ChevronLeft size={22} aria-hidden="true"/></button>}
-      {failed ? <p className="public-image-error" role="alert">{current.kind === "video" ? "Dieses Videoformat oder der Codec wird von deinem Browser nicht unterstützt oder das Video konnte nicht geladen werden." : "Das Bild kann nicht angezeigt werden."} Du kannst die Datei herunterladen.</p> : current.kind === "video" ? <video key={current.view} className="public-image-original" controls playsInline preload="metadata" src={current.view} onError={() => setFailed(true)}>Dieses Video wird von deinem Browser nicht unterstützt.</video> : <img key={current.view} className="public-image-original" src={current.view} alt={current.name} onError={() => setFailed(true)}/>}
+      {failed ? <p className="public-image-error" role="alert">{current.kind === "video" ? "Dieses Videoformat oder der Codec wird von deinem Browser nicht unterstützt oder das Video konnte nicht geladen werden." : "Das Bild kann nicht angezeigt werden."} Du kannst die Datei herunterladen.</p> : current.kind === "video" ? <video key={current.view} className="public-image-original" controls playsInline preload="metadata" src={current.view} onError={() => {setFailed(true);reportPublicResourceError(current.view);}}>Dieses Video wird von deinem Browser nicht unterstützt.</video> : <img key={current.view} className="public-image-original" src={current.view} alt={current.name} onError={() => {setFailed(true);reportPublicResourceError(current.view);}}/>}
       {index < media.length - 1 && <button type="button" className="public-viewer-next public-viewer-action" aria-label="Nächstes Medium" onClick={() => onMove(index + 1)}><ChevronRight size={22} aria-hidden="true"/></button>}
     </div><div className="public-viewer-meta"><strong id="public-image-title" title={current.name}>{current.name}</strong><span className="public-download-pill"><PublicSize url={current.size}/><PublicDownload href={current.download} name={current.name}/></span><span className="public-viewer-position">{index + 1} / {media.length}</span></div></div>
   </dialog>;
@@ -356,8 +359,9 @@ function App() {
   );
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
   const [view, setView] = useState<
-    "freigaben" | "kurzlinks" | "statistiken" | "einstellungen"
+    "freigaben" | "kurzlinks" | "qrcodes" | "statistiken" | "einstellungen"
   >("freigaben");
+  const [qrOpened,setQrOpened] = useState(false);
   const [publicLinkOrigin, setPublicLinkOrigin] = useState("");
   const [savedLinkOrigin, setSavedLinkOrigin] = useState("");
   const [defaultOrigin, setDefaultOrigin] = useState("");
@@ -371,6 +375,7 @@ function App() {
   const [publicView, setPublicView] = useState<"grid" | "list" | "compact">("grid");
   const [page, setPage] = useState<{
       locked: boolean;
+      telemetry?:string;
       title?: string;
       items?: { id: string; name: string; kind: string }[];
     } | null>(null),
@@ -382,6 +387,15 @@ function App() {
   const publicSlug = location.pathname.startsWith("/share/")
     ? decodeURIComponent(location.pathname.slice(7))
     : null;
+  const publicViewRef=useRef(publicView);
+  publicViewRef.current=publicView;
+  const telemetryRef=useRef<ReturnType<typeof startPublicTelemetry>|null>(null);
+  useEffect(() => {
+    if(!publicSlug || !page?.telemetry) return;
+    const telemetry=startPublicTelemetry(publicSlug,page.telemetry,() => publicViewRef.current);
+    telemetryRef.current=telemetry;
+    return () => {telemetry.stop();if(telemetryRef.current===telemetry) telemetryRef.current=null;};
+  },[publicSlug,page?.telemetry]);
   useEffect(() => {
     const close = (event: PointerEvent) => { if(uploadMenuRef.current && !uploadMenuRef.current.contains(event.target as Node)) uploadMenuRef.current.open = false; };
     document.addEventListener("pointerdown", close);
@@ -401,9 +415,11 @@ function App() {
   useEffect(() => {
     const syncView = () => {
       const next = location.hash.slice(1);
+      if(next === "qrcodes") setQrOpened(true);
       if (
         next === "freigaben" ||
         next === "kurzlinks" ||
+        next === "qrcodes" ||
         next === "statistiken" ||
         next === "einstellungen"
       )
@@ -458,10 +474,11 @@ function App() {
   }
   async function loadPage() {
     if (publicSlug)
-      setPage(await api(`/api/public/${encodeURIComponent(publicSlug)}`));
+      setPage(await api(`/api/public/${encodeURIComponent(publicSlug)}?${publicCampaignQuery()}`));
   }
   useEffect(() => {
-    (publicSlug ? loadPage() : refresh()).catch((e) => setError(e.message));
+    const timer=setTimeout(() => {(publicSlug ? loadPage() : refresh()).catch((e) => setError(e.message));},0);
+    return () => clearTimeout(timer);
   }, []);
   useEffect(() => {
     if (!source) {
@@ -629,7 +646,7 @@ function App() {
   );
   async function browse(id: string, sub = "") {
     const x = await api<{ entries: Entry[] }>(
-      `/api/public/${encodeURIComponent(publicSlug!)}/items/${id}?path=${encodeURIComponent(sub)}`,
+      withPublicVisit(`/api/public/${encodeURIComponent(publicSlug!)}/items/${id}?path=${encodeURIComponent(sub)}`,page?.telemetry),
     );
     setFolder({ id, path: sub, entries: x.entries });
   }
@@ -659,13 +676,14 @@ function App() {
               className="header-nav-indicator"
               aria-hidden="true"
               style={{
-                transform: `translateX(${["freigaben", "kurzlinks", "statistiken", "einstellungen"].indexOf(view) * 46}px)`,
+                transform: `translateX(${["freigaben", "kurzlinks", "qrcodes", "statistiken", "einstellungen"].indexOf(view) * 46}px)`,
               }}
             />
             {(
               [
                 ["freigaben", "Freigaben", Share2],
                 ["kurzlinks", "Kurzlinks", Link2],
+                ["qrcodes", "QR-Codes", QrCode],
                 ["statistiken", "Statistiken", BarChart3],
                 ["einstellungen", "Einstellungen", Settings],
               ] as const
@@ -747,6 +765,7 @@ function App() {
         <nav className="mobile-menu-panel" aria-label="Mobile Hauptnavigation">
           {([
             ["freigaben", "Freigaben", Share2], ["kurzlinks", "Kurzlinks", Link2],
+            ["qrcodes", "QR-Codes", QrCode],
             ["statistiken", "Statistiken", BarChart3], ["einstellungen", "Einstellungen", Settings],
           ] as const).map(([id, label, Icon]) => <a key={id} href={`#${id}`} aria-current={view === id ? "page" : undefined} onClick={(event) => { event.currentTarget.closest("details")!.open = false; setError(""); setNotice(""); }}><Icon size={18} aria-hidden="true" />{label}</a>)}
           <button type="button" onClick={(event) => { event.currentTarget.closest("details")!.open = false; void run(async () => { await post("/api/auth/logout", {}); await refresh(); }); }}><LogOut size={18} aria-hidden="true" />Abmelden</button>
@@ -787,7 +806,7 @@ function App() {
             <>
               <div className="public-share-heading">
                 <h1>{page.title}</h1>
-                <a className="button public-download" href={`/api/public/${encodeURIComponent(publicSlug)}/zip`}><Download size={18} aria-hidden="true" /> Herunterladen</a>
+                <a className="button public-download" href={withPublicVisit(`/api/public/${encodeURIComponent(publicSlug)}/zip`,page.telemetry)}><Download size={18} aria-hidden="true" /> Herunterladen</a>
               </div>
               {folder && <nav className="breadcrumbs public-breadcrumbs" aria-label="Ordnerpfad">
                 {page.items && page.items.length > 1 && <button type="button" onClick={() => setFolder(null)}>Freigabe</button>}
@@ -798,8 +817,8 @@ function App() {
                 const entries = folder ? folder.entries.map(entry => ({...entry, id: folder.id, path: [folder.path, entry.name].filter(Boolean).join("/")})) : (page.items ?? []).map(item => ({...item, path: ""}));
                 const directories = entries.filter(entry => entry.kind === "directory");
                 const files = entries.filter(entry => entry.kind === "file");
-                const itemUrl = (entry: typeof entries[number], action: string) => `/api/public/${encodeURIComponent(publicSlug)}/items/${encodeURIComponent(entry.id)}/${action}${entry.path ? `?path=${encodeURIComponent(entry.path)}` : ""}`;
-                const sizeUrl = (entry: typeof entries[number]) => `${itemUrl(entry, "size")}${entry.path ? "&" : "?"}kind=${entry.kind}`;
+                const itemUrl = (entry: typeof entries[number], action: string) => withPublicVisit(`/api/public/${encodeURIComponent(publicSlug)}/items/${encodeURIComponent(entry.id)}/${action}${entry.path ? `?path=${encodeURIComponent(entry.path)}` : ""}`,page.telemetry);
+                const sizeUrl = (entry: typeof entries[number]) => `${itemUrl(entry, "size")}${entry.path || page.telemetry ? "&" : "?"}kind=${entry.kind}`;
                 const mediaEntries = files.filter(entry => /\.(jpe?g|png|webp|gif|avif|svg|tiff?|heic|heif|txt|md|csv|json|log|ya?ml|mp4|m4v|mov|webm|mkv|ogv|avi)$/i.test(entry.name));
                 const openMedia = (entry: typeof entries[number]) => setViewer({ media: mediaEntries.map(file => ({name:file.name, view:itemUrl(file,"view"), download:itemUrl(file,"download"), size:sizeUrl(file), kind: /\.(mp4|m4v|mov|webm|mkv|ogv|avi)$/i.test(file.name) ? "video" : "image"})), index: mediaEntries.indexOf(entry) });
                 const folderRow = (entry: typeof entries[number]) => <li key={`${entry.id}:${entry.path}`} className="public-folder-row"><button type="button" className="public-folder" onClick={() => void run(() => browse(entry.id, entry.path))}><Folder size={20} aria-hidden="true"/><span>{entry.name}</span></button><span className="public-download-pill"><PublicSize url={sizeUrl(entry)}/><PublicDownload href={itemUrl(entry, "zip")} name={entry.name}/></span></li>;
@@ -807,7 +826,7 @@ function App() {
                   {publicView !== "compact" && image ? <PublicImage src={itemUrl(entry, "preview")} name={entry.name} onOpen={() => openMedia(entry)}/> : video && publicView !== "compact" ? <button type="button" className="public-file-icon public-video-icon" aria-label={`${entry.name} anzeigen`} onClick={() => openMedia(entry)}><Film size={24} aria-hidden="true"/></button> : <span className="public-file-icon">{video ? <Film size={20} aria-hidden="true"/> : <File size={20} aria-hidden="true"/>}</span>}
                   {image || video ? <button type="button" className="public-file-name public-media-name" title={entry.name} onClick={() => openMedia(entry)}>{entry.name}</button> : <span className="public-file-name" title={entry.name}>{entry.name}</span>}<span className="public-download-pill"><PublicSize url={sizeUrl(entry)}/><PublicDownload href={itemUrl(entry, "download")} name={entry.name}/></span>
                 </div></li>; };
-                const viewMenu = <details className="public-view-menu"><summary aria-label="Ansicht auswählen">{publicView === "grid" ? <LayoutGrid size={17} aria-hidden="true"/> : publicView === "list" ? <List size={17} aria-hidden="true"/> : <ListCollapse size={17} aria-hidden="true"/>}<span>{publicView === "grid" ? "Kacheln" : publicView === "list" ? "Liste" : "Kompakt"}</span><ChevronDown size={15} aria-hidden="true"/></summary><div className="public-view-options" role="group" aria-label="Ansicht">{([["grid", "Kacheln", LayoutGrid], ["list", "Liste", List], ["compact", "Kompakt", ListCollapse]] as const).map(([value, label, Icon]) => <button type="button" key={value} aria-pressed={publicView === value} onClick={event => {setPublicView(value); event.currentTarget.closest("details")!.open = false;}}><Icon size={16} aria-hidden="true"/> {label}</button>)}</div></details>;
+                const viewMenu = <details className="public-view-menu"><summary aria-label="Ansicht auswählen">{publicView === "grid" ? <LayoutGrid size={17} aria-hidden="true"/> : publicView === "list" ? <List size={17} aria-hidden="true"/> : <ListCollapse size={17} aria-hidden="true"/>}<span>{publicView === "grid" ? "Kacheln" : publicView === "list" ? "Liste" : "Kompakt"}</span><ChevronDown size={15} aria-hidden="true"/></summary><div className="public-view-options" role="group" aria-label="Ansicht">{([["grid", "Kacheln", LayoutGrid], ["list", "Liste", List], ["compact", "Kompakt", ListCollapse]] as const).map(([value, label, Icon]) => <button type="button" key={value} aria-pressed={publicView === value} onClick={event => {if(publicViewRef.current!==value) {setPublicView(value);publicViewRef.current=value;telemetryRef.current?.viewChanged();} event.currentTarget.closest("details")!.open = false;}}><Icon size={16} aria-hidden="true"/> {label}</button>)}</div></details>;
                 return <>
                   {viewer && <PublicMediaViewer media={viewer.media} index={viewer.index} onMove={index => setViewer(previous => previous ? {...previous, index} : null)} onClose={() => setViewer(null)}/>}
                   {publicView === "compact" ? <div className="public-files-group"><div className="public-files-heading compact-heading">{viewMenu}</div><ul className="public-compact-list">{directories.map(folderRow)}{files.map(fileRow)}</ul></div> : <>
@@ -1311,6 +1330,9 @@ function App() {
                   <div className="link-create-actions"><LinkOptions dateTimeSettings={dateTimeSettings} expiresAt={linkExpiry} password={linkPassword} onExpiry={setLinkExpiry} onPassword={setLinkPassword}/><button type="submit">Erstellen</button><button type="button" className="share-action" aria-label="Kurzlink-Erstellung abbrechen" title="Abbrechen" onClick={() => setLinkCreateOpen(false)}><X size={18} aria-hidden="true" /></button></div>
                 </form>}
               </div>
+            </section>
+            <section id="qrcodes" hidden={view !== "qrcodes"}>
+              {qrOpened && <React.Suspense fallback={<p role="status">QR-Werkbank wird geladen …</p>}><QrCodes origin={savedLinkOrigin || defaultOrigin} links={[...links,...shares]}/></React.Suspense>}
             </section>
             <section id="statistiken" hidden={view !== "statistiken"}>
               <Statistics data={analytics} dateTimeSettings={dateTimeSettings} />

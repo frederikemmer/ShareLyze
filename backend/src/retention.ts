@@ -17,6 +17,7 @@ export const activeUploadBatches = new Map<string, number>();
 const batchId = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 /** Deletes only private upload batches, never a source path. Historical rows remain for analytics. */
 export function runRetention(db: Database.Database, uploadRoot?: string, now = Date.now()) {
+  db.prepare("DELETE FROM public_visits WHERE expires_at<=?").run(new Date(now).toISOString());
   const settings = getRetention(db);
   if (settings.analyticsDays !== null) db.prepare("DELETE FROM events WHERE created_at < ?").run(new Date(now - settings.analyticsDays * 86400000).toISOString());
   const cutoff = new Date(now - settings.deletedShareDays * 86400000).toISOString();

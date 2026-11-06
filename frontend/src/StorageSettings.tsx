@@ -1,3 +1,4 @@
+import { GeoIpSettings } from "./GeoIpSettings";
 import { UploadSettings } from "./UploadSettings";
 import { useEffect, useState } from "react";
 import type { RetentionSettings } from "../../backend/src/retention";
@@ -29,6 +30,7 @@ export function StorageSettings({notify}: {notify:(message:string,error?:boolean
   }
   return <>
     <UploadSettings notify={notify}/>
+    <GeoIpSettings/>
     <div className="settings-block"><h2>Aufbewahrung</h2><p>Gelöschte Freigaben sind sofort gesperrt. Nach der Frist werden ausschließlich eigene Uploads ohne weitere Freigabezuordnung bereinigt. Historische Statistikzuordnungen und Kurznamen bleiben erhalten.</p>
     {settings && <form onSubmit={event => {
       event.preventDefault();setBusy(true);

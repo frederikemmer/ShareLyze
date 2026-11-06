@@ -1,8 +1,11 @@
+import { campaignQuery } from "../../shared/telemetry";
 import { getUploadSettings } from "./upload-settings";
 import { validateUploadSettings } from "../../shared/upload-filter";
 import { getRetention, validateRetention } from "./retention";
 import { PreviewCache } from "./previews";
-import { visitorDetails } from "./analytics";
+import { recordEvent, acceptClientHints } from "./analytics";
+import { analyticsRouter } from "./analytics-routes";
+import { GeoIpService } from "./geoip";
 import express, {
   type Request,
   type Response,
@@ -34,6 +37,7 @@ interface AppOptions {
   uploadRoot?: string;
   passwordKey?: Buffer;
   previewCache?: PreviewCache;
+  geoIp?: GeoIpService;
   trustedProxies?: string[];
   allowLoopbackAliases?: boolean;
   developmentOrigins?: string[];
@@ -49,6 +53,7 @@ export function createApp({
   uploadRoot,
   passwordKey,
   previewCache = new PreviewCache(),
+  geoIp = new GeoIpService(),
   trustedProxies = [],
   allowLoopbackAliases = false,
   developmentOrigins = [],
@@ -82,13 +87,14 @@ export function createApp({
   if (trustedProxies.length) app.set("trust proxy", trustedProxies);
   app.disable("x-powered-by");
   app.use(express.json({ limit: "256kb" }));
-  app.use((_req, res, next) => {
+  app.use((req, res, next) => {
     res.set({
       "Cache-Control": "no-store",
       "X-Content-Type-Options": "nosniff",
       "Referrer-Policy": "no-referrer",
       "X-Frame-Options": "DENY",
     });
+    if (req.path.startsWith("/api/public/") || req.path.startsWith("/share/") || req.path.startsWith("/r/") || /^\/[^/]+$/.test(req.path)) res.set("Accept-CH",acceptClientHints);
     next();
   });
   // An explicitly configured origin is used, never Host or proxy headers.
@@ -458,7 +464,8 @@ export function createApp({
     }
     res.json({ ok: true });
   });
-  const access = linkAccess(db);
+  app.use(analyticsRouter(db,requireAdmin,geoIp,publicOrigin));
+  const access = linkAccess(db,geoIp);
   app.get("/r/:slug", access.open);
   app.post("/api/link-access/:slug", rateLimit("link-unlock"), express.urlencoded({ extended: false, limit: "4kb" }), access.unlock);
   if (uploadRoot) app.use(uploadsRouter(uploadRoot, requireAdmin, db));
@@ -470,11 +477,16 @@ export function createApp({
       rateLimit("unlock"),
       rateLimit("browse", 120, 60_000),
       previewCache,
+      geoIp,
     ),
   );
   if (frontendDir) {
     app.use(express.static(frontendDir, { index: false, fallthrough: true }));
-    app.get(["/", "/share/:slug"], (_req, res) => {
+    app.get(["/", "/share/:slug"], (req, res) => {
+      if(req.params.slug) {
+        const link=db.prepare("SELECT l.id,l.share_id FROM links l JOIN shares s ON s.id=l.share_id WHERE (l.slug=? OR (l.case_sensitive=0 AND l.slug=? COLLATE NOCASE)) AND l.active=1 AND s.active=1 AND s.deleted_at IS NULL AND (s.expires_at IS NULL OR s.expires_at>?)").get(req.params.slug,req.params.slug,new Date().toISOString()) as {id:string;share_id:string}|undefined;
+        if(link) recordEvent(db,req,{linkId:link.id,shareId:link.share_id,type:"landing"},geoIp);
+      }
       res.sendFile(join(frontendDir, "index.html"));
     });
   }
@@ -491,7 +503,8 @@ export function createApp({
       return;
     }
     if (link.target_url) { access.open(req, res, () => {}); return; }
-    res.redirect(302, `/share/${encodeURIComponent(String(req.params.slug))}`);
+    recordEvent(db,req,{linkId:link.id,shareId:link.share_id!,type:"share_redirect"},geoIp);
+    res.redirect(302, `/share/${encodeURIComponent(String(req.params.slug))}${campaignQuery(req.query)}`);
   });
   app.use((_req, res) => {
     res.status(404).json({ error: "Not found" });

@@ -1,3 +1,4 @@
+import { GeoIpService } from "./geoip";
 import { configureSources } from "./sources";
 import { dataLayout } from "./data-layout";
 import { runRetention, getRetention } from "./retention";
@@ -24,9 +25,11 @@ if (
   !["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)
 )
   throw new Error("HTTP is allowed only on localhost");
-const {dbPath,uploadRoot,previewRoot,passwordKeyPath} = await dataLayout();
+const {dbPath,uploadRoot,previewRoot,passwordKeyPath,configRoot} = await dataLayout();
 const db = openDatabase(dbPath);
 const previewCache = new PreviewCache(previewRoot);
+const geoIp = new GeoIpService(resolve(configRoot,"geoip"));
+await geoIp.load();
 const encryptedExample = db.prepare("SELECT id,password_encrypted FROM links WHERE password_encrypted IS NOT NULL LIMIT 1").get() as {id:string;password_encrypted:string}|undefined;
 const passwordKey = loadPasswordKey(passwordKeyPath, !!encryptedExample);
 if(encryptedExample) decryptLinkPassword(encryptedExample.password_encrypted,passwordKey,encryptedExample.id);
@@ -40,7 +43,7 @@ if (
 )
   throw new Error("Invalid ANALYTICS_RETENTION_DAYS");
 async function maintenance() {
-  try { runRetention(db,uploadRoot); await previewCache.clean(getRetention(db).previewDays); }
+  try { runRetention(db,uploadRoot); await previewCache.clean(getRetention(db).previewDays); await geoIp.maintain(); }
   catch (error) { console.error("ShareLyze maintenance failed", error); }
 }
 
@@ -64,6 +67,7 @@ if (
 const app = createApp({
   db,
   previewCache,
+  geoIp,
   uploadRoot,
   passwordKey,
   publicOrigin,

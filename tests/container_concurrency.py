@@ -97,7 +97,22 @@ try:
             time.sleep(0.1)
     else:
         raise AssertionError("Capacity was not released after disconnect")
-    print("32 paused downloads accepted, 33rd rejected, capacity released after disconnect")
+    for _ in range(50):
+        with call("/api/analytics/events?type=download_aborted", agent=agent) as response:
+            aborted = json.load(response)["events"]
+        if len(aborted) == 32:
+            break
+        time.sleep(0.1)
+    else:
+        raise AssertionError(f"Expected 32 logged disconnects, got {len(aborted)}")
+    for row in aborted:
+        details = row["details"]
+        assert details["transfer"]["outcome"] == "aborted"
+        assert details["transfer"]["bytes"] < 128 * 1024 * 1024
+        assert details["transfer"]["durationMs"] >= 0
+        assert details["diagnostic"]["code"] == "client_disconnected"
+        assert len(details["diagnostic"]["possibleReasons"]) > 1
+    print("32 paused downloads accepted, 33rd rejected, capacity released; 32 structured abort logs include partial bytes, duration and possible causes")
 finally:
     for response in connections:
         response.close()

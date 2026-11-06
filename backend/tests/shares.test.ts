@@ -85,7 +85,7 @@ describe("share HTTP flow", () => {
         })
         .expect(201);
       const locked = await request(app).get("/api/public/photos").expect(200);
-      expect(locked.body).toEqual({ locked: true });
+      expect(locked.body).toMatchObject({ locked: true });
       await request(app)
         .post("/api/public/photos/unlock")
         .set("Origin", origin)

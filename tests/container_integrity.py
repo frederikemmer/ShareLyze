@@ -84,7 +84,14 @@ try:
         totals = {row["type"]: row["count"] for row in json.load(response)["totals"]}
     assert totals.get("download_start") == 1 and totals.get("zip_start") == 1, totals
     assert not totals.get("transfer_finished") and not totals.get("zip_finished"), totals
-    print("Mutated file and ZIP streams were not counted as completed")
+    with call("/api/analytics/events", agent=agent) as response:
+        events = json.load(response)["events"]
+    failures = [row for row in events if row["type"] in ("download_error", "zip_error")]
+    assert {row["type"] for row in failures} == {"download_error", "zip_error"}, failures
+    for row in failures:
+        assert row["details"]["transfer"]["outcome"] == "failed"
+        assert row["details"]["diagnostic"]["code"] == "source_changed"
+    print("Mutated file and ZIP streams were not counted as completed; structured error logs identify source changes")
 finally:
     subprocess.run(["docker", "stop", name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     shutil.rmtree(root)

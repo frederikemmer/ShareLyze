@@ -1,4 +1,8 @@
-import { Router, type Request, type RequestHandler } from "express";
+import { observeTransfer,errorCode,diagnose } from "./transfer-observer";
+import { createVisit,getVisit,previousTransferAttempt } from "./visits";
+import { readCampaign,validateClientContext,fileType } from "../../shared/telemetry";
+import type { VisitorSnapshot } from "../../shared/analytics";
+import { Router, type Request, type RequestHandler,type NextFunction,type Response } from "express";
 import type Database from "better-sqlite3";
 import { randomUUID } from "node:crypto";
 import { basename } from "node:path";
@@ -20,7 +24,8 @@ import {
   openSourceFile,
 } from "./storage";
 import { parseRange } from "./range";
-import { visitorDetails } from "./analytics";
+import { recordEvent, decodeEvent } from "./analytics";
+import { GeoIpService } from "./geoip";
 import { PreviewCache, previewPattern } from "./previews";
 
 type Source = { id: string; name: string; root: string };
@@ -86,6 +91,7 @@ export function sharesRouter(
   rateLimit: RequestHandler,
   browseLimit: RequestHandler,
   previewCache = new PreviewCache(),
+  geoIp = new GeoIpService(),
 ) {
   const router = Router();
   let activeZips = 0;
@@ -132,20 +138,20 @@ export function sharesRouter(
     type: string,
     itemId?: string,
     filePath?: string,
-  ) =>
-    db
-      .prepare(
-        "INSERT INTO events(link_id,share_id,item_id,type,created_at,file_path,ip_address,user_agent,referrer_origin) VALUES (?,?,?,?,?,?,?,?,?)",
-      )
-      .run(
-        share.link_id,
-        share.id,
-        itemId ?? null,
-        type,
-        new Date().toISOString(),
-        filePath ?? null,
-        ...visitorDetails(req),
-      );
+    details?:Partial<VisitorSnapshot>,
+  ) => recordEvent(db,req,{linkId:share.link_id,shareId:share.id,type,itemId,filePath,details},geoIp);
+  router.use("/api/public/:slug",(req,res,next) => {
+    const category = /\/(preview|view|download|zip|telemetry)(?:\?|$)/.test(req.url);
+    if(category || !["GET","HEAD"].includes(req.method)) {next();return;}
+    const share=find(String(req.params.slug));
+    if(!share) {next();return;}
+    const started=performance.now();
+    res.once("finish",() => {
+      try {event(req,share,"api_response",undefined,undefined,{quality:{origin:"server",resource:"api",durationMs:performance.now()-started,status:res.statusCode}});}
+      catch {console.error("ShareLyze: response analytics result could not be persisted.");}
+    });
+    next();
+  });
   router.get("/api/sources", admin, (_req, res) => {
     res.json({
       sources: db
@@ -194,7 +200,7 @@ export function sharesRouter(
   });
   router.get("/api/analytics", admin, (_req, res) => {
     res.json({
-      recent: db.prepare("SELECT e.id,e.created_at,e.type,l.slug,e.ip_address,e.user_agent,e.referrer_origin FROM events e JOIN links l ON l.id=e.link_id ORDER BY e.id DESC LIMIT 200").all(),
+      recent: db.prepare("SELECT e.*,l.slug FROM events e LEFT JOIN links l ON l.id=e.link_id ORDER BY e.id DESC LIMIT 200").all().map(decodeEvent),
       totals: db
         .prepare(
           "SELECT type, count(*) AS count FROM events GROUP BY type ORDER BY type",
@@ -322,6 +328,7 @@ export function sharesRouter(
       if (!changed.changes) {res.sendStatus(404);return;}
       db.prepare("UPDATE links SET active=0,deleted_at=? WHERE share_id=?").run(timestamp,req.params.id);
       db.prepare("DELETE FROM share_grants WHERE share_id=?").run(req.params.id);
+      db.prepare("DELETE FROM public_visits WHERE share_id=?").run(req.params.id);
       res.json({ok:true});
     })();
   });
@@ -498,6 +505,7 @@ export function sharesRouter(
       typeof req.body?.password !== "string" ||
       !(await verifyPassword(req.body.password, share.password_hash))
     ) {
+      event(req,share,"unlock_failed");
       res.status(401).json({ error: "Invalid password" });
       return;
     }
@@ -520,19 +528,68 @@ export function sharesRouter(
     });
     res.json({ ok: true });
   });
+  router.post("/api/public/:slug/telemetry",browseLimit,(req,res) => {
+    const share=find(String(req.params.slug));
+    if(!share) {res.sendStatus(404);return;}
+    const visit=getVisit(db,req,share.link_id);
+    if(!visit) {res.sendStatus(403);return;}
+    if(visit.reports>=200) {res.sendStatus(429);return;}
+    const body=req.body;
+    let client,details:Partial<VisitorSnapshot>,type:string,reportItemId:string|undefined,reportPath:string|undefined;
+    try {
+      client=validateClientContext(body?.client);
+      details={client};
+      if(body.kind==="context") type="client_context";
+      else if(body.kind==="view_change") type="view_change";
+      else if(["navigation","resource","resource_error"].includes(body.kind)) {
+        let extension="unknown";
+        if(body.itemId!==undefined) {
+          if(!granted(share,req.headers.cookie) || typeof body.itemId!=="string" || typeof (body.path ?? "")!=="string") throw new Error();
+          const item=resolveItem(share,body.itemId,body.path || "");
+          if(!item) throw new Error();
+          extension=fileType(item.path);reportItemId=item.item.id;reportPath=body.path || "";
+        }
+        if(body.kind==="resource_error") {
+          if(!["preview","media","download"].includes(body.resource)) throw new Error();
+          type="client_error";details.diagnostic=diagnose("browser_load_error");details.fileType=extension;details.resource=body.resource;
+        } else {
+          const finite=(n:unknown,max:number) => typeof n==="number" && Number.isFinite(n) && n>=0 && n<=max;
+          const value=body.timing;
+          if(!value || !finite(value.durationMs,86400000) || (value.ttfbMs!==undefined && !finite(value.ttfbMs,86400000)) || !Number.isInteger(value.status) || (value.status!==0 && (value.status<100 || value.status>599))) throw new Error();
+          if(body.kind==="resource" && !["api","preview","media"].includes(body.resource)) throw new Error();
+          type=body.kind==="navigation" ? "page_performance" : "resource_performance";
+          details.quality={origin:"browser",resource:body.kind==="navigation" ? "navigation" : body.resource,durationMs:value.durationMs,...(value.ttfbMs!==undefined ? {ttfbMs:value.ttfbMs} : {}),status:value.status,fileType:extension};
+          if(value.domReadyMs!==undefined) {if(!finite(value.domReadyMs,86400000)) throw new Error();details.quality.domReadyMs=value.domReadyMs;}
+          if(value.transferBytes!==undefined) {if(!finite(value.transferBytes,1e12)) throw new Error();details.quality.transferBytes=value.transferBytes;}
+        }
+      } else throw new Error();
+    } catch {res.status(400).json({error:"Invalid telemetry"});return;}
+    db.transaction(() => {
+      if(!visit.client_json || body.kind==="context" || body.kind==="view_change") db.prepare("UPDATE public_visits SET client_json=? WHERE id=?").run(JSON.stringify(client),visit.id);
+      db.prepare("UPDATE public_visits SET reports=reports+1 WHERE id=?").run(visit.id);
+      // Only add clearly identified browser context to this visit's initial view, never overwrite passive facts.
+      if(!visit.client_json && visit.event_id) db.prepare("UPDATE events SET details_json=json_set(details_json,'$.client',json(?)) WHERE id=?").run(JSON.stringify(client),visit.event_id);
+      event(req,share,type,reportItemId,reportPath,details);
+    })();
+    res.status(202).json({ok:true});
+  });
   router.get("/api/public/:slug", (req, res) => {
     const share = find(String(req.params.slug));
     if (!share) {
       res.status(404).json({ error: "Not found" });
       return;
     }
-    event(req, share, "view");
+    const visit=createVisit(db,share.link_id,share.id,readCampaign(req.query));
+    req.headers["x-sharelyze-visit"]=visit.token;
+    const viewEvent=event(req, share, "view");
+    db.prepare("UPDATE public_visits SET event_id=? WHERE id=?").run(Number(viewEvent.lastInsertRowid),visit.id);
     if (!granted(share, req.headers.cookie)) {
-      res.json({ locked: true });
+      res.json({ locked: true,telemetry:visit.token });
       return;
     }
     res.json({
       locked: false,
+      telemetry:visit.token,
       title: String(req.params.slug),
       items: items(share.id).map((i) => ({
         id: i.id,
@@ -593,9 +650,13 @@ export function sharesRouter(
   router.get("/api/public/:slug/items/:itemId/preview", async (req, res) => {
     const share = find(String(req.params.slug));
     if (!share || !granted(share, req.headers.cookie)) { res.sendStatus(404); return; }
+    let resourceType="unknown";
+    let resourceItemId:string|undefined,resourcePath:string|undefined;
+    const transfer=observeTransfer(req,res,"preview",resourceType,(type,metrics,diagnostic) => event(req,share,type,resourceItemId,resourcePath,{transfer:{...metrics,fileType:resourceType},...(diagnostic ? {diagnostic} : {}),fileType:resourceType,resource:metrics.kind,...(metrics.outcome!=="started" ? {quality:{origin:"server",resource:metrics.kind,durationMs:metrics.durationMs,status:metrics.status,fileType:resourceType}} : {})}));
     const sub = typeof req.query.path === "string" ? req.query.path : "";
     const target = resolveItem(share, String(req.params.itemId), sub);
-    if (!target || !previewPattern.test(target.path)) {res.sendStatus(404);return;}
+    if(target) {resourceType=fileType(target.path);resourceItemId=target.item.id;resourcePath=sub;}
+    if (!target || !previewPattern.test(target.path)) {if(target) transfer.fail("unsupported_format");res.sendStatus(404);return;}
     if (activePreviews >= 32) {res.set("Retry-After","5").sendStatus(503);return;}
     activePreviews++;
     try {
@@ -603,33 +664,38 @@ export function sharesRouter(
       // Recheck after background work: a share may have been deleted meanwhile.
       const current = find(String(req.params.slug));
       if (!current || !granted(current,req.headers.cookie)) {res.sendStatus(404);return;}
-      if (!res.destroyed) res.type("image/jpeg").set("Content-Security-Policy","default-src 'none'; sandbox").send(buffer);
-    } catch {if (!res.destroyed) res.sendStatus(404);}
+      if (!res.destroyed) {transfer.buffered(buffer.length);res.type("image/jpeg").set("Content-Security-Policy","default-src 'none'; sandbox").send(buffer);}
+    } catch(error) {transfer.failure(error,"render_failed");if (!res.destroyed) res.sendStatus(404);}
     finally {activePreviews--;}
   });
   router.get("/api/public/:slug/items/:itemId/view", async (req, res) => {
     const share = find(String(req.params.slug));
     if (!share || !granted(share, req.headers.cookie)) { res.sendStatus(404); return; }
+    let resourceType="unknown";
+    let resourceItemId:string|undefined,resourcePath:string|undefined;
+    const transfer=observeTransfer(req,res,"media",resourceType,(type,metrics,diagnostic) => event(req,share,type,resourceItemId,resourcePath,{transfer:{...metrics,fileType:resourceType},...(diagnostic ? {diagnostic} : {}),fileType:resourceType,resource:metrics.kind,...(metrics.outcome!=="started" ? {quality:{origin:"server",resource:metrics.kind,durationMs:metrics.durationMs,status:metrics.status,fileType:resourceType}} : {})}));
     const sub = typeof req.query.path === "string" ? req.query.path : "";
     const target = resolveItem(share, String(req.params.itemId), sub);
+    if(target) {resourceType=fileType(target.path);resourceItemId=target.item.id;resourcePath=sub;}
     if (target && previewPattern.test(target.path) && !/\.(jpe?g|png|webp|gif|avif)$/i.test(target.path)) {
       try {
         const output = await previewCache.get(target.item.root,target.path);
         const current = find(String(req.params.slug));
         if (!current || !granted(current,req.headers.cookie)) {res.sendStatus(404);return;}
+        transfer.buffered(output.length);
         res.type("image/jpeg").set("Content-Security-Policy","default-src 'none'; sandbox").send(output);
-      } catch {res.sendStatus(404);}
+      } catch(error) {transfer.failure(error,"render_failed");res.sendStatus(404);}
       return;
     }
     if (!target || !/\.(jpe?g|png|webp|gif|avif|mp4|m4v|mov|webm|mkv|ogv|avi)$/i.test(target.path)) { res.sendStatus(404); return; }
     if (activeDownloads >= 32) { res.set("Retry-After", "5").sendStatus(503); return; }
     let fd: number;
-    try { fd = openSourceFile(target.item.root, target.path); } catch { res.sendStatus(404); return; }
+    try { fd = openSourceFile(target.item.root, target.path); } catch(error) {transfer.failure(error);res.sendStatus(404);return;}
     let type: string | null;
     let size: number;
     let stat: Stats;
     try { type = imageContentType(fd) || videoContentType(fd, target.path); stat = fstatSync(fd); size = stat.size; } catch { closeSync(fd); res.sendStatus(404); return; }
-    if (!type) { closeSync(fd); res.sendStatus(404); return; }
+    if (!type) {transfer.fail("unsupported_format");closeSync(fd);res.sendStatus(404);return;}
     const etag = `"${stat.dev.toString(16)}-${stat.ino.toString(16)}-${size.toString(16)}-${stat.mtimeMs.toString(16)}-${stat.ctimeMs.toString(16)}"`;
     const header = req.get("range"), ifRange = req.get("if-range");
     const range = header && (!ifRange || ifRange === etag) ? parseRange(header, size) : null;
@@ -639,9 +705,10 @@ export function sharesRouter(
     if (req.method === "HEAD") { closeSync(fd); res.end(); return; }
     activeDownloads++;
     const stream = createReadStream("", {fd, autoClose:true, ...(range ? {start:range.start, end:range.end} : {})});
-    stream.on("error", () => res.destroy());
+    transfer.expected(range ? range.end-range.start+1 : size);transfer.range(!!range);
+    stream.on("error",error => {transfer.failure(error);res.destroy();});
     res.on("close", () => { activeDownloads--; stream.destroy(); });
-    stream.pipe(res);
+    stream.pipe(transfer.meter).pipe(res);
   });
   router.get("/api/public/:slug/items/:itemId/download", (req, res) => {
     const share = find(String(req.params.slug));
@@ -649,8 +716,12 @@ export function sharesRouter(
       res.status(404).json({ error: "Not found" });
       return;
     }
+    let resourceType="unknown";
+    let resourceItemId:string|undefined,resourcePath:string|undefined;
+    const transfer=observeTransfer(req,res,"download",resourceType,(type,metrics,diagnostic) => event(req,share,type,resourceItemId,resourcePath,{transfer:{...metrics,fileType:resourceType},...(diagnostic ? {diagnostic} : {}),fileType:resourceType,resource:metrics.kind,...(metrics.outcome!=="started" ? {quality:{origin:"server",resource:metrics.kind,durationMs:metrics.durationMs,status:metrics.status,fileType:resourceType}} : {})}));
     const sub = typeof req.query.path === "string" ? req.query.path : "";
     const target = resolveItem(share, req.params.itemId, sub);
+    if(target) {resourceType=fileType(target.path);resourceItemId=target.item.id;resourcePath=sub;}
     if (!target) {
       res.status(404).json({ error: "Not found" });
       return;
@@ -665,7 +736,8 @@ export function sharesRouter(
     let fd: number;
     try {
       fd = openSourceFile(target.item.root, target.path);
-    } catch {
+    } catch(error) {
+      transfer.failure(error);
       res.status(404).json({ error: "Not found" });
       return;
     }
@@ -709,7 +781,10 @@ export function sharesRouter(
       return;
     }
     try {
-      event(req, share, "download_start", target.item.id, sub);
+      transfer.expected(range ? range.end-range.start+1 : stat.size);
+      transfer.range(!!range);
+      transfer.retry(previousTransferAttempt(db,req,share.link_id,target.item.id,sub,"download"));
+      transfer.start();
     } catch (error) {
       closeSync(fd);
       throw error;
@@ -720,19 +795,19 @@ export function sharesRouter(
       autoClose: true,
       ...(range ? { start: range.start, end: range.end } : {}),
     });
-    let changed = false;
-    stream.on("error", () => {
+    stream.on("error",error => {
+      transfer.failure(error);
       if (!res.destroyed) res.destroy();
     });
     stream.on("end", () => {
       try {
         const after = fstatSync(fd);
         if (!sameFile(after, stat)) {
-          changed = true;
+          transfer.fail("source_changed");
           res.destroy();
         }
       } catch {
-        changed = true;
+        transfer.fail("source_changed");
         res.destroy();
       }
     });
@@ -740,10 +815,7 @@ export function sharesRouter(
       activeDownloads--;
       stream.destroy();
     });
-    res.on("finish", () => {
-      if (!changed) event(req, share, "transfer_finished", target.item.id, sub);
-    });
-    stream.pipe(res);
+    stream.pipe(transfer.meter).pipe(res);
   });
   router.get(["/api/public/:slug/zip", "/api/public/:slug/items/:itemId/zip"], (req, res) => {
     if (req.method === "HEAD") {
@@ -755,8 +827,11 @@ export function sharesRouter(
       res.status(404).json({ error: "Not found" });
       return;
     }
+    let zipItemId:string|undefined,zipPath:string|undefined;
+    const transfer=observeTransfer(req,res,"zip","zip",(type,metrics,diagnostic) => event(req,share,type,zipItemId,zipPath,{transfer:metrics,...(diagnostic ? {diagnostic} : {}),fileType:"zip",resource:"zip",...(metrics.outcome!=="started" ? {quality:{origin:"server",resource:"zip",durationMs:metrics.durationMs,status:metrics.status,fileType:"zip"}} : {})}));
     const sub = typeof req.query.path === "string" ? req.query.path : "";
     const selected = req.params.itemId ? resolveItem(share, String(req.params.itemId), sub) : null;
+    if(selected) {zipItemId=selected.item.id;zipPath=sub;}
     if ((req.params.itemId && (!selected || selected.item.kind !== "directory")) || (!req.params.itemId && sub)) { res.sendStatus(404); return; }
     if (activeZips >= 3) {
       res
@@ -768,7 +843,8 @@ export function sharesRouter(
     let count = 0;
     let activeStream: Readable | undefined;
     let cancelled = false;
-    zip.on("error", () => {
+    zip.on("error",error => {
+      transfer.failure(error);
       activeStream?.destroy();
       if (res.destroyed) return;
       if (res.headersSent) res.destroy();
@@ -846,6 +922,7 @@ export function sharesRouter(
         else addFile(item, item.relative_path, name);
       }
     } catch (error) {
+      transfer.failure(error);
       res
         .status(error instanceof DirectoryLimitError ? 413 : 400)
         .json({ error: "Archive unavailable" });
@@ -865,12 +942,13 @@ export function sharesRouter(
       "Content-Type": "application/zip",
       "Content-Disposition": selected ? `attachment; filename="sharelyze.zip"; filename*=UTF-8''${encodeURIComponent((basename(selected.path) || "folder") + ".zip").replace(/['()*]/g, c => "%" + c.charCodeAt(0).toString(16).toUpperCase())}` : 'attachment; filename="sharelyze.zip"',
     });
-    event(req, share, "zip_start");
-    zip.outputStream.on("error", () => res.destroy());
+    transfer.retry(previousTransferAttempt(db,req,share.link_id,zipItemId,zipPath,"zip"));
+    transfer.start();
+    zip.outputStream.on("error",error => {transfer.failure(error);res.destroy();});
     res.on("close", releaseZip);
-    res.on("finish", () => event(req, share, "zip_finished"));
-    zip.outputStream.pipe(res);
+    zip.outputStream.pipe(transfer.meter).pipe(res);
     zip.end({ forceZip64Format: true, comment: "" });
   });
+  router.use((error:unknown,_req:Request,res:Response,next:NextFunction) => {res.locals.telemetryError=errorCode(error,"request_failed");next(error);});
   return router;
 }
