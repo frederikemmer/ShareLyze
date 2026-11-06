@@ -56,8 +56,7 @@ try:
     subprocess.run(["docker", "run", "--rm", "-d", "--name", name,
         "-p", f"127.0.0.1:{port}:3000", "--tmpfs", "/data:uid=1000,gid=1000",
         "--tmpfs", "/sources/test:uid=1000,gid=1000", "-e", f"PUBLIC_ORIGIN={origin}",
-        "-e", f"SETUP_TOKEN={token}", "-e",
-        'SOURCES_JSON=[{"id":"test","name":"Test","root":"/sources/test"}]', image],
+        "-e", f"SETUP_TOKEN={token}", image],
         check=True, stdout=subprocess.DEVNULL)
     for _ in range(100):
         try:
@@ -72,7 +71,10 @@ try:
     agent = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
     with call("/api/auth/setup", {"username":"test", "password":"test-password-123", "setupToken":token}, agent) as response:
         response.read()
-    with call("/api/shares", {"title":"Test", "slug":"integrity", "items":[{"sourceId":"test", "path":"large.bin", "kind":"file"}]}, agent) as response:
+    with call("/api/sources", agent=agent) as response:
+        sources = json.load(response)["sources"]
+    source_id = next(source["id"] for source in sources if source["name"] == "test")
+    with call("/api/shares", {"title":"Test", "slug":"integrity", "items":[{"sourceId":source_id, "path":"large.bin", "kind":"file"}]}, agent) as response:
         response.read()
     with call("/api/public/integrity") as response:
         item = json.load(response)["items"][0]["id"]
