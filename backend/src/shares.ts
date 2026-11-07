@@ -1,3 +1,4 @@
+import { verifiedTail } from "./verified-stream";
 import { observeTransfer,errorCode,diagnose } from "./transfer-observer";
 import { createVisit,getVisit,previousTransferAttempt } from "./visits";
 import { readCampaign,validateClientContext,fileType } from "../../shared/telemetry";
@@ -793,29 +794,27 @@ export function sharesRouter(
     const stream = createReadStream("", {
       fd,
       autoClose: true,
+      highWaterMark: 64 * 1024,
       ...(range ? { start: range.start, end: range.end } : {}),
     });
-    stream.on("error",error => {
+    const verified = verifiedTail(() => {
+      try {
+        if (sameFile(fstatSync(fd), stat)) return;
+      } catch { /* A closed/unavailable descriptor cannot establish integrity. */ }
+      throw new Error("Source changed");
+    });
+    const fail = (error: Error) => {
       transfer.failure(error);
       if (!res.destroyed) res.destroy();
-    });
-    stream.on("end", () => {
-      try {
-        const after = fstatSync(fd);
-        if (!sameFile(after, stat)) {
-          transfer.fail("source_changed");
-          res.destroy();
-        }
-      } catch {
-        transfer.fail("source_changed");
-        res.destroy();
-      }
-    });
+    };
+    stream.on("error", fail);
+    verified.on("error", fail);
     res.on("close", () => {
       activeDownloads--;
       stream.destroy();
+      verified.destroy();
     });
-    stream.pipe(transfer.meter).pipe(res);
+    stream.pipe(verified).pipe(transfer.meter).pipe(res);
   });
   router.get(["/api/public/:slug/zip", "/api/public/:slug/items/:itemId/zip"], (req, res) => {
     if (req.method === "HEAD") {

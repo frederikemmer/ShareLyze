@@ -14,6 +14,18 @@ vi.mock("../src/storage",() => ({
   listSourceDirectory:(root:string,path:string) => readdirSync(join(root,path),{withFileTypes:true}).map(entry => ({name:entry.name,kind:entry.isDirectory() ? "directory" : "file"})),
   measureSourceItem:async () => ({fileCount:1,totalBytes:10}),
 }));
+const eofGate=vi.hoisted(() => ({hold:false,release:undefined as (()=>void)|undefined}));
+vi.mock("node:fs",async importOriginal => {
+  const fs=await importOriginal<typeof import("node:fs")>();
+  return {...fs,createReadStream:(...args:Parameters<typeof fs.createReadStream>) => {
+    const stream=fs.createReadStream(...args),push=stream.push.bind(stream);
+    stream.push=(chunk: any,encoding?:BufferEncoding) => {
+      if(chunk===null && eofGate.hold) {eofGate.release=()=>push(null);return false;}
+      return push(chunk,encoding);
+    };
+    return stream;
+  }};
+});
 const client={timeZone:"Europe/Berlin",utcOffsetMinutes:-60,touchPoints:5,colorScheme:"dark",view:"grid"};
 const origin="http://localhost:5173",setupToken="0123456789abcdef0123456789abcdef";
 
@@ -127,4 +139,28 @@ it("generates local campaign QR PNGs and preserves campaign across share/passwor
     const redirect=db.prepare("SELECT details_json FROM events WHERE type='redirect'").get() as any;
     expect(JSON.parse(redirect.details_json).campaign).toEqual({utm_source:"card",utm_medium:"qr"});
   } finally {db.close();}
+});
+
+// Expose the CI race deterministically: all bytes have been read, but EOF is held.
+it("does not expose a complete HTTP body before final source verification",async()=>{
+  const root=mkdtempSync(join(tmpdir(),"sharelyze-eof-")),db=openDatabase(":memory:");
+  const app=createApp({db,publicOrigin:origin,setupToken,secureCookies:false});
+  let pending:Promise<unknown>|undefined;
+  try {
+    writeFileSync(join(root,"file.txt"),"0123456789");
+    db.prepare("INSERT INTO sources(id,name,root) VALUES('src','src',?)").run(root);
+    db.exec("INSERT INTO shares(id,title,created_at) VALUES('s','s','now'); INSERT INTO links(id,slug,share_id,created_at) VALUES('l','photo','s','now'); INSERT INTO share_items(id,share_id,source_id,relative_path,kind) VALUES('f','s','src','file.txt','file')");
+    eofGate.hold=true;let settled=false;
+    pending=request(app).get("/api/public/photo/items/f/download").expect(200).then(response=>{settled=true;expect(response.body.toString()).toBe("0123456789");});
+    await vi.waitFor(()=>expect(eofGate.release).toBeTypeOf("function"));
+    // Give a Content-Length client time to consume a prematurely exposed body.
+    await new Promise(resolve=>setTimeout(resolve,30));
+    expect(settled).toBe(false);
+    expect(db.prepare("SELECT count(*) AS n FROM events WHERE type='transfer_finished'").get()).toEqual({n:0});
+    eofGate.hold=false;eofGate.release!();await pending;
+    await vi.waitFor(()=>expect(db.prepare("SELECT count(*) AS n FROM events WHERE type='transfer_finished'").get()).toEqual({n:1}));
+  } finally {
+    eofGate.hold=false;eofGate.release?.();eofGate.release=undefined;
+    await pending?.catch(()=>{});db.close();rmSync(root,{recursive:true,force:true});
+  }
 });
