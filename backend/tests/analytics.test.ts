@@ -92,11 +92,11 @@ it("migrates v13 event history without fabricating visitor details",async () => 
   const root=mkdtempSync(join(tmpdir(),"sharelyze-analytics-migration-")),file=join(root,"db");
   try {
     const old=openDatabase(file);
-    old.exec("INSERT INTO links(id,slug,target_url,created_at) VALUES('l','old','https://example.org','now'); INSERT INTO events(link_id,type,created_at,ip_address,user_agent) VALUES('l','redirect','2026-11-01T00:00:00.000Z','8.8.8.8','legacy'); DROP INDEX events_type_time; ALTER TABLE events DROP COLUMN details_json; PRAGMA user_version=13;");
+    old.exec("INSERT INTO links(id,slug,target_url,created_at) VALUES('l','old','https://example.org','now'); INSERT INTO events(link_id,type,created_at,ip_address,user_agent) VALUES('l','redirect','2026-11-01T00:00:00.000Z','8.8.8.8','legacy'); DROP INDEX events_type_time; ALTER TABLE events DROP COLUMN details_json; ALTER TABLE shares DROP COLUMN password_encrypted; PRAGMA user_version=13;");
     old.close();
     const migrated=openDatabase(file);
     try {
-      expect(migrated.pragma("user_version",{simple:true})).toBe(15);
+      expect(migrated.pragma("user_version",{simple:true})).toBe(16);
       expect(migrated.prepare("SELECT ip_address,user_agent,details_json FROM events").get()).toEqual({ip_address:"8.8.8.8",user_agent:"legacy",details_json:null});
     } finally {migrated.close();}
   } finally {rmSync(root,{recursive:true,force:true});}

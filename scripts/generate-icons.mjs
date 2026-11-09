@@ -16,6 +16,7 @@ for (const [theme, svg] of [['light', light], ['dark', dark]]) {
     .replace(/  <rect width="64" height="64" rx="15"[^>]*\/>\n/, '')
     .replace(/stroke="#(?:b8b5af|606268)"/, `stroke="${foreground}" stroke-opacity="0.32"`);
   await writeFile(new URL(`logo-${theme}-transparent.svg`, directory), transparent);
+  if (theme === 'light') await sharp(Buffer.from(transparent), { density: 768 }).resize(256, 256).png().toFile(new URL('logo-qr.png', directory).pathname);
 }
 await writeFile(new URL('favicon.svg', directory), source);
 for (const [name, size] of [

@@ -27,6 +27,7 @@ import { linkAccess, validateLinkProtection } from "./link-protection";
 import { sharesRouter } from "./shares";
 import { uploadsRouter } from "./uploads";
 import { join } from "node:path";
+import { getTrustedProxies, validateTrustedProxies } from "./trusted-proxies";
 
 interface AppOptions {
   db: Database.Database;
@@ -84,7 +85,8 @@ export function createApp({
   if (setupToken.length < 32)
     throw new Error("Setup token must contain at least 32 characters");
   const app = express();
-  if (trustedProxies.length) app.set("trust proxy", trustedProxies);
+  const proxyOverride = trustedProxies.length > 0;
+  app.set("trust proxy", proxyOverride ? trustedProxies : getTrustedProxies(db));
   app.disable("x-powered-by");
   app.use(express.json({ limit: "256kb" }));
   app.use((req, res, next) => {
@@ -312,6 +314,15 @@ export function createApp({
     ).run(parsed.origin);
     res.json({ publicLinkOrigin: parsed.origin, defaultOrigin: origin });
   });
+  app.get("/api/settings/trusted-proxies", requireAdmin, (req,res) => res.json({proxies: proxyOverride ? trustedProxies : getTrustedProxies(db), locked:proxyOverride, peerAddress:req.socket.remoteAddress ?? null}));
+  app.put("/api/settings/trusted-proxies", requireAdmin, (req,res) => {
+    if (proxyOverride) {res.status(409).json({error:"TRUSTED_PROXIES overrides this setting"});return;}
+    let proxies: string[];
+    try {proxies=validateTrustedProxies(req.body?.proxies);} catch {res.status(400).json({error:"Invalid proxy addresses"});return;}
+    db.prepare("INSERT INTO settings(key,value) VALUES('trusted_proxies',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(JSON.stringify(proxies));
+    app.set("trust proxy", proxies);
+    res.json({proxies,locked:false,peerAddress:req.socket.remoteAddress ?? null});
+  });
   app.get("/api/settings/uploads", requireAdmin, (_req,res) => res.json(getUploadSettings(db)));
   app.put("/api/settings/uploads", requireAdmin, (req,res) => {
     let value;
@@ -478,6 +489,8 @@ export function createApp({
       rateLimit("browse", 120, 60_000),
       previewCache,
       geoIp,
+      passwordKey,
+      rateLimit("copy-password", 60, 60_000),
     ),
   );
   if (frontendDir) {

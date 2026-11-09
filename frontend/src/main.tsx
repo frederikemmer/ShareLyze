@@ -1,12 +1,13 @@
 import { startPublicTelemetry,publicCampaignQuery,reportPublicResourceError,withPublicVisit } from "./public-telemetry";
 import { isUploadIgnored, type UploadSettings } from "../../shared/upload-filter";
 import { StorageSettings } from "./StorageSettings";
+import { TrustedProxySettings } from "./TrustedProxySettings";
 import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./style.css";
 import { RegionTimeSettings, browserDateTime } from "./RegionTimeSettings";
 import type { DateTimeSettings } from "../../backend/src/date-time-settings";
-import { SettingsHelp } from "./SettingsHelp";
+import { SettingsSection } from "./SettingsSection";
 import { SlugDefaults } from "./SlugDefaults";
 import { LinkOptions, ProtectionIcon } from "./LinkOptions";
 import { formatTimestamp, resolvedDateTime } from "./date-time";
@@ -163,10 +164,12 @@ type Share = {
   id: string;
   title: string;
   slug: string;
+  content_kind: "file" | "directory" | "multiple";
   description: string | null;
   active: number;
   expires_at: string | null;
   has_password: number;
+  has_copyable_password: number;
 };
 type Link = { id: string; slug: string; target_url: string; active: number; expires_at: string | null; has_password: number; has_copyable_password: number };
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
@@ -211,46 +214,43 @@ async function api<T>(path: string, options?: RequestInit): Promise<T> {
 function ShareEditor({
   share,
   onSave,
-  selection,
+  onChooseContent,
   dateTimeSettings,
   onError,
   onClose,
+  onDelete,
 }: {
   share: Share;
   dateTimeSettings: DateTimeSettings;
   onError: (message: string) => void;
   onClose: () => void;
-  selection: Item[];
+  onDelete: () => void;
+  onChooseContent: () => void;
   onSave: (payload: Record<string, unknown>) => Promise<boolean>;
 }) {
   const [description, setDescription] = useState(share.description ?? ""),
     [slug, setSlug] = useState(share.slug),
-    [expiry, setExpiry] = useState(share.expires_at ?? ""),
+    [expiry, setExpiry] = useState(share.active ? (share.expires_at ?? "") : "1970-01-01T00:00:00.000Z"),
+    [expiryChanged, setExpiryChanged] = useState(false),
     [secret, setSecret] = useState(""),
-    [remove, setRemove] = useState(false),
-    [replace, setReplace] = useState(false);
-  useEffect(() => {
-    setReplace(false);
-  }, [selection]);
+    [remove, setRemove] = useState(false);
   return (
     <>
-      <form className="inline-editor"
+      <form className="inline-editor link-inline-editor"
         onSubmit={(e) => {
           e.preventDefault();
           if(secret && secret.length < 12) { onError("Das Freigabepasswort muss mindestens 12 Zeichen haben."); return; }
           const payload: Record<string, unknown> = {
             description,
             slug,
-            ...(expiry !== (share.expires_at ?? "") ? {expiresAt: expiry || null} : {}),
+            ...(expiryChanged ? {active: true, expiresAt: expiry || null} : {}),
           };
-          if (replace) payload.items = selection;
           if (remove) payload.password = null;
           else if (secret) payload.password = secret;
           void onSave(payload).then((ok) => {
             if (ok) {
               setSecret("");
               setRemove(false);
-              setReplace(false);
             }
           });
         }}
@@ -264,33 +264,10 @@ function ShareEditor({
             onChange={(e) => setSlug(e.target.value)}
           />
         </label>
-        <LinkOptions dateTimeSettings={dateTimeSettings} minPasswordLength={12} expiresAt={expiry} password={secret} passwordSaved={!!share.has_password && !remove && !secret} onExpiry={setExpiry} onPassword={value => {setSecret(value); setRemove(!!share.has_password && !value);}}/>
-        <label className="inline">
-          <input
-            type="checkbox"
-            checked={replace}
-            disabled={!selection.length}
-            onChange={(e) => setReplace(e.target.checked)}
-          />{" "}
-          Inhalt durch die unten ausgewählten {selection.length} Elemente
-          ersetzen
-        </label>
-        {replace && (
-          <div>
-            <p>
-              Diese Elemente ersetzen den bisherigen Inhalt von „{share.slug}“:
-            </p>
-            <ul>
-              {selection.map((item, index) => (
-                <li key={`${item.sourceId}:${item.path}:${index}`}>
-                  {item.sourceId}: /{item.path || ""} (
-                  {item.kind === "directory" ? "Ordner" : "Datei"})
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-        <div className="link-editor-actions"><button type="submit" className="share-action" aria-label="Änderungen speichern" title="Änderungen speichern"><Save className="save-icon" size={16} aria-hidden="true"/></button><button type="button" className="share-action" aria-label="Bearbeitung schließen" title="Abbrechen" onClick={onClose}><X size={16} aria-hidden="true"/></button></div>
+        <div className="link-editor-actions">
+          <LinkOptions dateTimeSettings={dateTimeSettings} minPasswordLength={12} expiresAt={expiry} password={secret} passwordSaved={!!share.has_password && !remove && !secret} onExpiry={value => {setExpiry(value); setExpiryChanged(true);}} onPassword={value => {setSecret(value); setRemove(!!share.has_password && !value);}}/>
+          <button type="button" className="share-action" title="Inhalt ändern" aria-label="Inhalt ändern" onClick={onChooseContent}><Folder size={16} aria-hidden="true"/></button>
+<button type="button" className="share-action delete-action" aria-label={`Freigabe /${share.slug} löschen`} title="Freigabe löschen" onClick={onDelete}><DeleteIcon/></button><button type="submit" className="share-action" aria-label="Änderungen speichern" title="Änderungen speichern"><Save className="save-icon" size={16} aria-hidden="true"/></button><button type="button" className="share-action" aria-label="Bearbeitung schließen" title="Abbrechen" onClick={onClose}><X size={16} aria-hidden="true"/></button></div>
       </form>
     </>
   );
@@ -328,7 +305,9 @@ function App() {
     [expires, setExpires] = useState(""),
     [url, setUrl] = useState(""),
     [linkSlug, setLinkSlug] = useState("");
-  const [shareMode, setShareMode] = useState<"existing" | "upload">("existing");
+  const [contentShare, setContentShare] = useState<Share | null>(null);
+  const savedCreateSelection = useRef<Item[]>([]);
+  const [shareMode, setShareMode] = useState<"existing" | "upload" | "link">("link");
   const activeSelected = selected.filter(item => (item.sourceId === "sharelyze-uploads") === (shareMode === "upload"));
   const [editLinkExpiry, setEditLinkExpiry] = useState("");
   const [editLinkPassword, setEditLinkPassword] = useState<string | undefined>(undefined);
@@ -340,13 +319,9 @@ function App() {
   const shareSlugEdited = useRef(false);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState({ percent: 0, label: "Wird vorbereitet" });
-  const [linkSearchOpen, setLinkSearchOpen] = useState(false);
   const [shareSearchOpen, setShareSearchOpen] = useState(false);
   const shareSearchButton = useRef<HTMLButtonElement>(null);
-  const [linkCreateOpen, setLinkCreateOpen] = useState(false);
-  const linkSearchButton = useRef<HTMLButtonElement>(null);
   const [shareQuery, setShareQuery] = useState(""),
-    [linkQuery, setLinkQuery] = useState(""),
     [editingShare, setEditingShare] = useState<string | null>(null),
     [editingLink, setEditingLink] = useState<string | null>(null),
     [editUrl, setEditUrl] = useState(""),
@@ -354,14 +329,12 @@ function App() {
   const [shareFilter, setShareFilter] = useState<
     "all" | "active" | "expired" | "inactive"
   >("all");
-  const [linkFilter, setLinkFilter] = useState<"all" | "active" | "expired">(
-    "all",
-  );
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
   const [view, setView] = useState<
     "freigaben" | "kurzlinks" | "qrcodes" | "statistiken" | "einstellungen"
   >("freigaben");
   const [qrOpened,setQrOpened] = useState(false);
+  const [qrSelection,setQrSelection] = useState<{slug:string} | null>(null);
   const [publicLinkOrigin, setPublicLinkOrigin] = useState("");
   const [savedLinkOrigin, setSavedLinkOrigin] = useState("");
   const [defaultOrigin, setDefaultOrigin] = useState("");
@@ -423,7 +396,7 @@ function App() {
         next === "statistiken" ||
         next === "einstellungen"
       )
-        setView(next);
+        setView(next === "kurzlinks" ? "freigaben" : next);
       else if (!next) setView("freigaben");
     };
     syncView();
@@ -458,12 +431,12 @@ function App() {
       setDefaultOrigin(settings.defaultOrigin);
     }
   }
-  async function copyLinkPassword(link: Link) {
+  async function copyLinkPassword(link: Link | Share) {
     if(link.has_copyable_password === undefined) throw new Error("Das Backend läuft noch mit einem älteren Stand. Bitte den Entwicklungsserver neu starten.");
     if(!link.has_copyable_password) throw new Error("Dieses Passwort bitte einmal neu setzen, damit es kopiert werden kann.");
     if(!navigator.clipboard) throw new Error("Die Zwischenablage ist hier nicht verfügbar.");
     const load = async () => {
-      const response = await fetch(`/api/links/${encodeURIComponent(link.id)}/password`, {method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});
+      const response = await fetch(`/api/${"target_url" in link ? "links" : "shares"}/${encodeURIComponent(link.id)}/password`, {method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});
       if(!response.ok) throw new Error("Passwort konnte nicht geladen werden. Gegebenenfalls erneut setzen.");
       return (await response.json() as {password:string}).password;
     };
@@ -638,11 +611,10 @@ function App() {
   );
   const visibleLinks = links.filter(
     (link) =>
-      (linkFilter === "all" ||
-        (linkFilter === "active" ? !link.expires_at || Date.parse(link.expires_at) > clockNow : !!link.expires_at && Date.parse(link.expires_at) <= clockNow)) &&
+      (shareFilter === "all" || (shareFilter === "active" ? !link.expires_at || Date.parse(link.expires_at) > clockNow : shareFilter === "expired" && !!link.expires_at && Date.parse(link.expires_at) <= clockNow)) &&
       `${link.slug} ${link.target_url}`
         .toLocaleLowerCase("de")
-        .includes(normalized(linkQuery)),
+        .includes(normalized(shareQuery)),
   );
   async function browse(id: string, sub = "") {
     const x = await api<{ entries: Entry[] }>(
@@ -676,13 +648,12 @@ function App() {
               className="header-nav-indicator"
               aria-hidden="true"
               style={{
-                transform: `translateX(${["freigaben", "kurzlinks", "qrcodes", "statistiken", "einstellungen"].indexOf(view) * 46}px)`,
+                transform: `translateX(${["freigaben", "qrcodes", "statistiken", "einstellungen"].indexOf(view) * 46}px)`,
               }}
             />
             {(
               [
                 ["freigaben", "Freigaben", Share2],
-                ["kurzlinks", "Kurzlinks", Link2],
                 ["qrcodes", "QR-Codes", QrCode],
                 ["statistiken", "Statistiken", BarChart3],
                 ["einstellungen", "Einstellungen", Settings],
@@ -764,7 +735,7 @@ function App() {
         <summary aria-label="Menü öffnen"><picture aria-hidden="true"><source media="(prefers-color-scheme: dark)" srcSet="/logo-dark-transparent.svg" /><img src="/logo-light-transparent.svg" width="36" height="36" alt="" /></picture></summary>
         <nav className="mobile-menu-panel" aria-label="Mobile Hauptnavigation">
           {([
-            ["freigaben", "Freigaben", Share2], ["kurzlinks", "Kurzlinks", Link2],
+            ["freigaben", "Freigaben", Share2],
             ["qrcodes", "QR-Codes", QrCode],
             ["statistiken", "Statistiken", BarChart3], ["einstellungen", "Einstellungen", Settings],
           ] as const).map(([id, label, Icon]) => <a key={id} href={`#${id}`} aria-current={view === id ? "page" : undefined} onClick={(event) => { event.currentTarget.closest("details")!.open = false; setError(""); setNotice(""); }}><Icon size={18} aria-hidden="true" />{label}</a>)}
@@ -902,11 +873,11 @@ function App() {
             <section id="freigaben" hidden={view !== "freigaben"}>
               <div className="share-toolbar link-heading">
                 {shareSearchOpen ? <>
-                  <h1 className="visually-hidden">Datenfreigabe</h1>
-                  <label className="search-field compact-field"><span>Freigaben suchen</span><input autoFocus type="search" value={shareQuery} onChange={(e) => setShareQuery(e.target.value)} placeholder="Kurzname" /></label>
+                  <h1 className="visually-hidden">Freigaben</h1>
+                  <label className="search-field compact-field"><span>Freigaben suchen</span><input autoFocus type="search" value={shareQuery} onChange={(e) => setShareQuery(e.target.value)} placeholder="Kurzname oder Zieladresse" /></label>
                   <button type="button" className="share-action heading-search-button" aria-label="Suche schließen" onClick={() => { setShareSearchOpen(false); setShareQuery(""); requestAnimationFrame(() => shareSearchButton.current?.focus()); }}><X size={18} aria-hidden="true" /></button>
                 </> : <>
-                  <h1>Datenfreigabe</h1>
+                  <h1>Freigaben</h1>
                   <button ref={shareSearchButton} type="button" className="share-action heading-search-button" aria-label="Freigaben suchen" onClick={() => setShareSearchOpen(true)}><Search size={18} aria-hidden="true" /></button>
                 </>}
               <div
@@ -936,8 +907,8 @@ function App() {
                     {label}{" "}
                     <span>
                       {id === "all"
-                        ? shares.length
-                        : shares.filter((s) => shareStatus(s) === id).length}
+                        ? shares.length + links.length
+                        : shares.filter((s) => shareStatus(s) === id).length + links.filter(link => id === "active" ? !link.expires_at || Date.parse(link.expires_at) > clockNow : id === "expired" && !!link.expires_at && Date.parse(link.expires_at) <= clockNow).length}
                     </span>
                   </button>
                 ))}
@@ -947,10 +918,12 @@ function App() {
                 {visibleShares.map((s) => (
                   <li key={s.id}>
                     <div className="managed-row share-table-row">
-                      <button type="button" className="share-slug" title="Link kopieren" aria-label={`Link /${s.slug} kopieren`} onClick={() => void run(async () => {
+                      <div className="share-identity"><span className="share-kind" role="img" aria-label={s.content_kind === "file" ? "Einzeldatei" : s.content_kind === "directory" ? "Ordner" : "Mehrere Elemente"} title={s.content_kind === "file" ? "Einzeldatei" : s.content_kind === "directory" ? "Ordner" : "Mehrere Elemente"}>{s.content_kind === "file" ? <File size={16}/> : s.content_kind === "directory" ? <Folder size={16}/> : <Files size={16}/>}</span><button type="button" className="share-slug" title="Link kopieren" aria-label={`Link /${s.slug} kopieren`} onClick={() => void run(async () => {
                         await navigator.clipboard.writeText(`${savedLinkOrigin}/${s.slug}`);
                         setNotice("Link kopiert.", `share:${s.id}`);
-                      })}>/{s.slug}</button>
+                      })}>/{s.slug}</button></div>
+                      <div className="link-metadata">
+                      {!s.active && <span className="share-expiry">Deaktiviert</span>}
                       <span
                         className="share-stat"
                         title="Downloadstarts einschließlich fortgesetzter Anfragen"
@@ -960,46 +933,30 @@ function App() {
                             x.slug === s.slug && x.type === "download_start",
                         )?.count ?? 0}
                       </span>
-                      {s.expires_at && <span className="share-expiry" title={`Ablauf: ${formatTimestamp(s.expires_at, dateTimeSettings, navigator.language)}`} aria-label={`Ablauf: ${formatRemaining(s.expires_at, clockNow, dateLocale)}`}><CalendarDays size={15} aria-hidden="true" />{formatRemaining(s.expires_at, clockNow, dateLocale)}</span>}
-                      <div className="managed-actions">
-                      <div className="status-control">
-                        <button
-                          type="button" role="switch" aria-checked={!!s.active} aria-label={`Freigabe /${s.slug} aktivieren`} className="toggle-switch"
-                          onClick={() =>
-                            void run(async () => {
-                              await api(`/api/shares/${s.id}`, {
-                                method: "PATCH",
-                                body: JSON.stringify({ active: !s.active }),
-                              });
-                              await refresh();
-                            })
-                          }
-                        >
-                          <span className="switch-track" aria-hidden="true" />
-                        </button>
-                        {shareStatus(s) === "expired" && <span className="expired-indicator" title="Abgelaufen" aria-label="Abgelaufen">!</span>}
+                      {s.expires_at && <span className="share-expiry" title={`Ablauf: ${formatTimestamp(s.expires_at, dateTimeSettings, navigator.language)}`}><ProtectionIcon kind="calendar"/>{Date.parse(s.expires_at) <= clockNow ? <CircleAlert size={15} aria-label="Abgelaufen"/> : formatRemaining(s.expires_at, clockNow, dateLocale)}</span>}
+                      {!!s.has_password && <button type="button" className="link-password-state" title={s.has_copyable_password ? "Passwort kopieren" : "Passwort zum Kopieren einmal neu setzen"} aria-label="Passwort kopieren" onClick={() => void run(() => copyLinkPassword(s))}><ProtectionIcon kind="lock"/></button>}
                       </div>
-                        <a
-                          className="share-action"
-                          href={`/${s.slug}`}
-                          aria-label={`Freigabe ${s.slug} öffnen`}
-                          title="Freigabe öffnen"
-                        >
-                          <ActionIcon kind="external" />
-                        </a>
+                      <div className="managed-actions">
+                        <a className="share-action" href="#qrcodes" aria-label={`QR-Code für Freigabe /${s.slug} erstellen`} title="QR-Code erstellen" onClick={() => {setQrSelection({slug:s.slug}); setQrOpened(true);}}><QrCode size={16} aria-hidden="true"/></a>
                         <button type="button" className="share-action" title="Bearbeiten" aria-label="Freigabe bearbeiten" aria-expanded={editingShare === s.id} onClick={() => setEditingShare(editingShare === s.id ? null : s.id)}><ActionIcon kind="pen" /></button>
-                        <button type="button" className="share-action delete-action" aria-label={`Freigabe /${s.slug} löschen`} title="Freigabe löschen" onClick={() => {
-                          if (!window.confirm(`Freigabe /${s.slug} löschen? Der Zugriff endet sofort. Eigene Uploads werden nach der Aufbewahrungsfrist bereinigt, wenn sie nicht mehr verwendet werden. Statistiken bleiben erhalten.`)) return;
-                          void run(async () => {await api(`/api/shares/${s.id}`,{method:"DELETE"});await refresh();});
-                        }}><DeleteIcon/></button>
+
                       </div>
                     </div>
                     {editingShare === s.id && <ShareEditor
                       share={s}
-                      selection={selected}
+                      onChooseContent={() => {
+                        savedCreateSelection.current = selected;
+                        setSelected([]); setShareMode("existing"); setSource(""); setPath("");
+                        setContentShare(s);
+                        if (shareCreateRef.current) { shareCreateRef.current.open = true; shareCreateRef.current.scrollIntoView({behavior:"smooth", block:"start"}); }
+                      }}
                       dateTimeSettings={dateTimeSettings}
                       onError={setError}
                       onClose={() => setEditingShare(null)}
+                      onDelete={() => {
+                        if (!window.confirm(`Freigabe /${s.slug} löschen? Der Zugriff endet sofort. Eigene Uploads werden nach der Aufbewahrungsfrist bereinigt, wenn sie nicht mehr verwendet werden. Statistiken bleiben erhalten.`)) return;
+                        void run(async () => { await api(`/api/shares/${s.id}`, {method:"DELETE"}); setEditingShare(null); await refresh(); });
+                      }}
                       onSave={async (payload) => {
                         setError("");
                         try {
@@ -1022,173 +979,11 @@ function App() {
                     />}
                   </li>
                 ))}
-                {visibleShares.length === 0 && (
-                  <li className="empty-state">
-                    {shares.length === 0 ? "Noch keine Freigabe erstellt." : "Keine passenden Freigaben gefunden."}
-                  </li>
-                )}
-              </ul>
-              <details className="create-panel share-create-panel" ref={shareCreateRef}>
-                <summary>＋ Neue Freigabe</summary>
-                <form className="share-create-form"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    void run(async () => {
-                      if(sharePassword && sharePassword.length < 12) throw new Error("Das Freigabepasswort muss mindestens 12 Zeichen haben.");
-                      await post("/api/shares", {
-                        description,
-                        slug,
-                        items: activeSelected.map(({ sourceId, path, kind }) => ({ sourceId, path, kind })),
-                        ...(sharePassword ? { password: sharePassword } : {}),
-                        ...(expires
-                          ? { expiresAt: new Date(expires).toISOString() }
-                          : {}),
-                      });
-                      setSelected(current => current.filter(item => (item.sourceId === "sharelyze-uploads") !== (shareMode === "upload")));
-                      setDescription("");
-                      setSlug(""); shareSlugEdited.current = false;
-                      setSharePassword("");
-                      setExpires("");
-                      await refresh();
-                      setNotice("Freigabe erstellt.", "share:create");
-                    });
-                  }}
-                >
-                  <label className="compact-field"><span>Beschreibung (optional)</span><input value={description} maxLength={2000} onChange={(e) => setDescription(e.target.value)} /></label>
-                  <label className="compact-field">
-                    <span>Kurzname</span>
-                    <input
-                      required
-                      value={slug}
-                      onChange={(e) => {shareSlugEdited.current = true; setSlug(e.target.value);}}
-                    />
-                  </label>
-                  <LinkOptions dateTimeSettings={dateTimeSettings} minPasswordLength={12} expiresAt={expires} password={sharePassword} onExpiry={setExpires} onPassword={setSharePassword}/>
-                  <button type="submit" disabled={!activeSelected.length || uploading}>Erstellen</button>
-                  <button type="button" className="share-action share-create-cancel" aria-label="Freigabeerstellung abbrechen" title="Abbrechen" disabled={uploading} onClick={() => {if(shareCreateRef.current) {shareCreateRef.current.open = false; shareCreateRef.current.querySelector("summary")?.focus();}}}><X size={18} aria-hidden="true"/></button>
-                </form>
-                <div className="share-mode-toggle" role="group" aria-label="Art der Freigabe">
-                  <button type="button" aria-pressed={shareMode === "existing"} disabled={uploading} onClick={() => setShareMode("existing")}>Bestehendes freigeben</button>
-                  <button type="button" aria-pressed={shareMode === "upload"} disabled={uploading} onClick={() => setShareMode("upload")}>Hochladen</button>
-                </div>
-                {shareMode === "upload" && <div className="upload-actions">
-                  <details className="upload-menu" ref={uploadMenuRef} onKeyDown={event => {if(event.key === "Escape") {event.preventDefault(); if(uploadMenuRef.current) uploadMenuRef.current.open=false; uploadMenuRef.current?.querySelector("summary")?.focus();}}}>
-                    <summary className="upload-trigger" aria-disabled={uploading} onClick={event => {if(uploading) event.preventDefault();}}>{uploading ? <><svg className="upload-spinner" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg><span role="status">{uploadProgress.label}</span><span className="upload-progress" style={{width: `${uploadProgress.percent}%`}} /></> : <><HardDriveUploadIcon/> Hochladen</>}</summary>
-                    <div className="upload-menu-panel">
-                      <label className="upload-picker">Dateien auswählen<input type="file" multiple disabled={uploading} onChange={event => {void uploadFiles(event.currentTarget.files); event.currentTarget.value=""; if(uploadMenuRef.current) uploadMenuRef.current.open=false;}}/></label>
-                      <label className="upload-picker">Ordner auswählen<input type="file" multiple ref={input => input?.setAttribute("webkitdirectory", "")} disabled={uploading} onChange={event => {void uploadFiles(event.currentTarget.files); event.currentTarget.value=""; if(uploadMenuRef.current) uploadMenuRef.current.open=false;}}/></label>
-                    </div>
-                  </details>
-                </div>}
-                {shareMode === "existing" && !source && <ul className="file-list source-list" aria-label="Verfügbare Speicherquellen">
-                  {sources.filter(item => item.id !== "sharelyze-uploads").map((item) => <li key={item.id}>
-                    <button type="button" className="source-open" onClick={() => { setSource(item.id); setPath(""); }}><Folder size={16} aria-hidden="true" />{item.name}</button>
-                  </li>)}
-                  {sources.every(item => item.id === "sharelyze-uploads") && <li className="empty-state">Keine Speicherquellen verfügbar.</li>}
-                </ul>}
-                {shareMode === "existing" && source && (
-                  <>
-                    <div className="picker-header"><div className="breadcrumbs" aria-label="Aktueller Ordner">
-                      <button type="button" className="breadcrumbs-home" aria-label="Speicherquellen" title="Speicherquellen" onClick={() => { setSource(""); setPath(""); }}><picture aria-hidden="true"><source media="(prefers-color-scheme: dark)" srcSet="/logo-dark-transparent.svg" /><img src="/logo-light-transparent.svg" width="20" height="20" alt="" /></picture></button> / {" "}
-                      <button type="button" onClick={() => setPath("")}>
-                        {sources.find((s) => s.id === source)?.name}
-                      </button>
-                      {path
-                        .split("/")
-                        .filter(Boolean)
-                        .map((part, index, parts) => (
-                          <span key={index}>
-                            {" "}
-                            /{" "}
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setPath(parts.slice(0, index + 1).join("/"))
-                              }
-                            >
-                              {part}
-                            </button>
-                          </span>
-                        ))}
-                    </div>
-                    <div className="picker-toolbar">
-                      <div className="picker-actions">
-                        <button type="button" className="picker-button" disabled={browseLoading || browseError} onClick={() => addItems([{ sourceId: source, path, kind: "directory" }])}><Folder size={16} aria-hidden="true"/>Ordner auswählen</button>
-                        <button type="button" className="picker-button" disabled={browseLoading || entries.length === 0} onClick={() => addItems(entries.map(entry => ({ sourceId: source, path: [path, entry.name].filter(Boolean).join("/"), kind: entry.kind })))}><Files size={16} aria-hidden="true"/>Sichtbare auswählen</button>
-                      </div>
-                    </div></div>
-                    <ul className="file-list folder-entries" tabIndex={0} aria-label="Ordnerinhalt">
-                      {entries.map((e) => (
-                          <li key={e.name}>
-                            <div className="folder-entry">
-                              <input type="checkbox" aria-label={`${e.name} auswählen`} checked={selected.some(x => x.sourceId === source && x.path === [path, e.name].filter(Boolean).join("/"))} onChange={() => toggle(e)} />
-                              {e.kind === "directory" ? <button type="button" className="folder-entry-open" onClick={() => setPath([path, e.name].filter(Boolean).join("/"))}><Folder size={16} aria-hidden="true" />{e.name}</button> : <span className="folder-entry-file"><File size={16} aria-hidden="true" />{e.name}</span>}
-                            </div>
-                          </li>
-                        ))}
-                      {!browseLoading && !browseError && entries.length === 0 && <li className="empty-state">Dieser Ordner ist leer.</li>}
-                    </ul>
-                  </>
-                )}
-                {activeSelected.length > 0 && <ul className="selected-pills" aria-label="Ausgewählte Dateien und Ordner">
-                  {activeSelected.map((item) => <SelectedItem key={`${item.sourceId}/${item.path}`} item={item} sourceName={sources.find(source => source.id === item.sourceId)?.name ?? item.sourceId} onRemove={() => setSelected(current => current.filter(entry => entry.sourceId !== item.sourceId || entry.path !== item.path))}/>)}
-                </ul>}
-              </details>
-            </section>
-            <section id="kurzlinks" hidden={view !== "kurzlinks"}>
-              <div className="share-toolbar link-heading">
-                {linkSearchOpen ? <>
-                  <h1 className="visually-hidden">Kurzlinks</h1>
-                  <label className="search-field compact-field">
-                    <span>Kurzlinks suchen</span>
-                    <input autoFocus type="search" value={linkQuery} onChange={(e) => setLinkQuery(e.target.value)} placeholder="Kurzname oder Zieladresse" />
-                  </label>
-                  <button type="button" className="share-action heading-search-button" aria-label="Suche schließen" onClick={() => { setLinkSearchOpen(false); setLinkQuery(""); requestAnimationFrame(() => linkSearchButton.current?.focus()); }}><X size={18} aria-hidden="true" /></button>
-                </> : <>
-                  <h1>Kurzlinks</h1>
-                  <button ref={linkSearchButton} type="button" className="share-action heading-search-button" aria-label="Kurzlinks suchen" onClick={() => setLinkSearchOpen(true)}><Search size={18} aria-hidden="true" /></button>
-                </>}
-              <div
-                className="share-filters link-filters"
-                role="group"
-                aria-label="Kurzlinks filtern"
-              >
-                {(
-                  [
-                    ["all", "Alle"],
-                    ["active", "Gültig"],
-                    ["expired", "Abgelaufen"],
-                  ] as const
-                ).map(([id, label]) => (
-                  <button
-                    type="button"
-                    key={id}
-                    className={
-                      linkFilter === id ? "share-filter active" : "share-filter"
-                    }
-                    aria-pressed={linkFilter === id}
-                    onClick={() => setLinkFilter(id)}
-                  >
-                    {label}{" "}
-                    <span>
-                      {id === "all"
-                        ? links.length
-                        : links.filter((link) =>
-                            id === "active"
-                              ? !link.expires_at || Date.parse(link.expires_at) > clockNow
-                              : !!link.expires_at && Date.parse(link.expires_at) <= clockNow,
-                          ).length}
-                    </span>
-                  </button>
-                ))}
-              </div>
-              </div>
-              <ul className="managed-list share-list">
                 {visibleLinks.map((l) => (
                   <li key={l.id}>
                     <div className="managed-row share-table-row link-table-row">
                       <div className="link-identity">
-                      <button type="button" className="share-slug" title="Link kopieren" aria-label={`Link /${l.slug} kopieren`} onClick={() => void run(async () => {
+                      <span className="share-kind" role="img" aria-label="Kurzlink" title="Kurzlink"><Link2 size={16}/></span><button type="button" className="share-slug" title="Link kopieren" aria-label={`Link /${l.slug} kopieren`} onClick={() => void run(async () => {
                         await navigator.clipboard.writeText(`${savedLinkOrigin}/${l.slug}`);
                         setNotice("Link kopiert.", `link:${l.id}`);
                       })}>/{l.slug}</button>
@@ -1206,14 +1001,7 @@ function App() {
                       </span>
                       </div>
                       <div className="managed-actions">
-                        <a
-                          className="share-action"
-                          href={`/${l.slug}`}
-                          aria-label={`Kurzlink /${l.slug} öffnen`}
-                          title="Kurzlink öffnen"
-                        >
-                          <ActionIcon kind="external" />
-                        </a>
+                        <a className="share-action" href="#qrcodes" aria-label={`QR-Code für Kurzlink /${l.slug} erstellen`} title="QR-Code erstellen" onClick={() => {setQrSelection({slug:l.slug}); setQrOpened(true);}}><QrCode size={16} aria-hidden="true"/></a>
                         <button
                           className="share-action"
                           title="Bearbeiten" aria-label="Kurzlink bearbeiten" aria-expanded={editingLink === l.id}
@@ -1289,14 +1077,16 @@ function App() {
                     )}
                   </li>
                 ))}
-                {visibleLinks.length === 0 && (
-                  <li className="empty-state">
-                    Keine passenden Kurzlinks gefunden.
-                  </li>
-                )}
+                {visibleShares.length === 0 && visibleLinks.length === 0 && <li className="empty-state">{shares.length + links.length === 0 ? "Noch keine Freigabe erstellt." : "Keine passenden Freigaben gefunden."}</li>}
               </ul>
-              <div className="create-panel link-create-panel">
-                {!linkCreateOpen ? <button type="button" className="link-create-toggle" onClick={() => setLinkCreateOpen(true)}>＋ Neuer Kurzlink</button> : <form className="link-create-form"
+              <details className="create-panel share-create-panel" ref={shareCreateRef}>
+                <summary>＋ Neue Freigabe</summary>
+                <div className="share-mode-toggle" role="group" aria-label="Art der Freigabe">
+                  {!contentShare && <button type="button" aria-pressed={shareMode === "link"} disabled={uploading} onClick={() => setShareMode("link")}>Kurzlink</button>}
+                  <button type="button" aria-pressed={shareMode === "existing"} disabled={uploading} onClick={() => setShareMode("existing")}>Lokal freigeben</button>
+                  <button type="button" aria-pressed={shareMode === "upload"} disabled={uploading} onClick={() => setShareMode("upload")}>Hochladen</button>
+                </div>
+                {contentShare ? <div className="content-replace-heading"><strong>Inhalt von /{contentShare.slug} ersetzen</strong><span>Die Auswahl ersetzt den bisherigen Inhalt vollständig.</span></div> : shareMode === "link" ? <form className="link-create-form"
                   onSubmit={(e) => {
                     e.preventDefault();
                     void run(async () => {
@@ -1327,20 +1117,124 @@ function App() {
                     />
                   </label>
                   </div>
-                  <div className="link-create-actions"><LinkOptions dateTimeSettings={dateTimeSettings} expiresAt={linkExpiry} password={linkPassword} onExpiry={setLinkExpiry} onPassword={setLinkPassword}/><button type="submit">Erstellen</button><button type="button" className="share-action" aria-label="Kurzlink-Erstellung abbrechen" title="Abbrechen" onClick={() => setLinkCreateOpen(false)}><X size={18} aria-hidden="true" /></button></div>
+                  <div className="link-create-actions"><LinkOptions dateTimeSettings={dateTimeSettings} expiresAt={linkExpiry} password={linkPassword} onExpiry={setLinkExpiry} onPassword={setLinkPassword}/><button type="submit">Erstellen</button><button type="button" className="share-action" aria-label="Kurzlink-Erstellung abbrechen" title="Abbrechen" onClick={() => {if(shareCreateRef.current) {shareCreateRef.current.open=false; shareCreateRef.current.querySelector("summary")?.focus();}}}><X size={18} aria-hidden="true" /></button></div>
+                </form> : <form className="share-create-form"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void run(async () => {
+                      if(sharePassword && sharePassword.length < 12) throw new Error("Das Freigabepasswort muss mindestens 12 Zeichen haben.");
+                      await post("/api/shares", {
+                        description,
+                        slug,
+                        items: activeSelected.map(({ sourceId, path, kind }) => ({ sourceId, path, kind })),
+                        ...(sharePassword ? { password: sharePassword } : {}),
+                        ...(expires
+                          ? { expiresAt: new Date(expires).toISOString() }
+                          : {}),
+                      });
+                      setSelected(current => current.filter(item => (item.sourceId === "sharelyze-uploads") !== (shareMode === "upload")));
+                      setDescription("");
+                      setSlug(""); shareSlugEdited.current = false;
+                      setSharePassword("");
+                      setExpires("");
+                      await refresh();
+                      setNotice("Freigabe erstellt.", "share:create");
+                    });
+                  }}
+                >
+                  <label className="compact-field"><span>Beschreibung (optional)</span><input value={description} maxLength={2000} onChange={(e) => setDescription(e.target.value)} /></label>
+                  <label className="compact-field">
+                    <span>Kurzname</span>
+                    <input
+                      required
+                      value={slug}
+                      onChange={(e) => {shareSlugEdited.current = true; setSlug(e.target.value);}}
+                    />
+                  </label>
+                  <div className="link-create-actions share-create-actions">
+                  <LinkOptions dateTimeSettings={dateTimeSettings} minPasswordLength={12} expiresAt={expires} password={sharePassword} onExpiry={setExpires} onPassword={setSharePassword}/>
+                  <button type="submit" disabled={!activeSelected.length || uploading}>Erstellen</button>
+                  <button type="button" className="share-action share-create-cancel" aria-label="Freigabeerstellung abbrechen" title="Abbrechen" disabled={uploading} onClick={() => {if(shareCreateRef.current) {shareCreateRef.current.open = false; shareCreateRef.current.querySelector("summary")?.focus();}}}><X size={18} aria-hidden="true"/></button>
+                  </div>
                 </form>}
-              </div>
+                {shareMode === "upload" && <div className="upload-actions">
+                  <details className="upload-menu" ref={uploadMenuRef} onKeyDown={event => {if(event.key === "Escape") {event.preventDefault(); if(uploadMenuRef.current) uploadMenuRef.current.open=false; uploadMenuRef.current?.querySelector("summary")?.focus();}}}>
+                    <summary className="upload-trigger" aria-disabled={uploading} onClick={event => {if(uploading) event.preventDefault();}}>{uploading ? <><svg className="upload-spinner" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg><span role="status">{uploadProgress.label}</span><span className="upload-progress" style={{width: `${uploadProgress.percent}%`}} /></> : <><HardDriveUploadIcon/> Hochladen</>}</summary>
+                    <div className="upload-menu-panel">
+                      <label className="upload-picker">Dateien auswählen<input type="file" multiple disabled={uploading} onChange={event => {void uploadFiles(event.currentTarget.files); event.currentTarget.value=""; if(uploadMenuRef.current) uploadMenuRef.current.open=false;}}/></label>
+                      <label className="upload-picker">Ordner auswählen<input type="file" multiple ref={input => input?.setAttribute("webkitdirectory", "")} disabled={uploading} onChange={event => {void uploadFiles(event.currentTarget.files); event.currentTarget.value=""; if(uploadMenuRef.current) uploadMenuRef.current.open=false;}}/></label>
+                    </div>
+                  </details>
+                </div>}
+                {shareMode === "existing" && !source && <ul className="file-list source-list" aria-label="Verfügbare Speicherquellen">
+                  {sources.filter(item => item.id !== "sharelyze-uploads").map((item) => <li key={item.id}>
+                    <button type="button" className="source-open" onClick={() => { setSource(item.id); setPath(""); }}><Folder size={16} aria-hidden="true" />{item.name}</button>
+                  </li>)}
+                  {sources.every(item => item.id === "sharelyze-uploads") && <li className="empty-state">Keine Speicherquellen verfügbar.</li>}
+                </ul>}
+                {shareMode === "existing" && source && (
+                  <>
+                    <div className="picker-header"><div className="breadcrumbs" aria-label="Aktueller Ordner">
+                      <button type="button" className="breadcrumbs-home" aria-label="Speicherquellen" title="Speicherquellen" onClick={() => { setSource(""); setPath(""); }}><picture aria-hidden="true"><source media="(prefers-color-scheme: dark)" srcSet="/logo-dark-transparent.svg" /><img src="/logo-light-transparent.svg" width="20" height="20" alt="" /></picture></button> / {" "}
+                      <button type="button" onClick={() => setPath("")}>
+                        {sources.find((s) => s.id === source)?.name}
+                      </button>
+                      {path
+                        .split("/")
+                        .filter(Boolean)
+                        .map((part, index, parts) => (
+                          <span key={index}>
+                            {" "}
+                            /{" "}
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setPath(parts.slice(0, index + 1).join("/"))
+                              }
+                            >
+                              {part}
+                            </button>
+                          </span>
+                        ))}
+                    </div>
+                    <div className="picker-toolbar">
+                      <div className="picker-actions">
+                        <button type="button" className="picker-button" disabled={browseLoading || browseError} onClick={() => addItems([{ sourceId: source, path, kind: "directory" }])}><Folder size={16} aria-hidden="true"/>Ordner auswählen</button>
+                        <button type="button" className="picker-button" disabled={browseLoading || entries.length === 0} onClick={() => addItems(entries.map(entry => ({ sourceId: source, path: [path, entry.name].filter(Boolean).join("/"), kind: entry.kind })))}><Files size={16} aria-hidden="true"/>Sichtbare auswählen</button>
+                      </div>
+                    </div></div>
+                    <ul className="file-list folder-entries" tabIndex={0} aria-label="Ordnerinhalt">
+                      {entries.map((e) => (
+                          <li key={e.name}>
+                            <div className="folder-entry">
+                              <input type="checkbox" aria-label={`${e.name} auswählen`} checked={selected.some(x => x.sourceId === source && x.path === [path, e.name].filter(Boolean).join("/"))} onChange={() => toggle(e)} />
+                              {e.kind === "directory" ? <button type="button" className="folder-entry-open" onClick={() => setPath([path, e.name].filter(Boolean).join("/"))}><Folder size={16} aria-hidden="true" />{e.name}</button> : <span className="folder-entry-file"><File size={16} aria-hidden="true" />{e.name}</span>}
+                            </div>
+                          </li>
+                        ))}
+                      {!browseLoading && !browseError && entries.length === 0 && <li className="empty-state">Dieser Ordner ist leer.</li>}
+                    </ul>
+                  </>
+                )}
+                {shareMode !== "link" && activeSelected.length > 0 && <ul className="selected-pills" aria-label="Ausgewählte Dateien und Ordner">
+                  {activeSelected.map((item) => <SelectedItem key={`${item.sourceId}/${item.path}`} item={item} sourceName={sources.find(source => source.id === item.sourceId)?.name ?? item.sourceId} onRemove={() => setSelected(current => current.filter(entry => entry.sourceId !== item.sourceId || entry.path !== item.path))}/>)}
+                </ul>}
+                {contentShare && <div className="content-replace-actions"><button type="button" disabled={!activeSelected.length || uploading} onClick={() => void run(async () => {
+                  await api(`/api/shares/${contentShare.id}`, {method:"PATCH",body:JSON.stringify({items:activeSelected})});
+                  await refresh(); setSelected(savedCreateSelection.current); setContentShare(null); if (shareCreateRef.current) shareCreateRef.current.open = false;
+                  setNotice("Freigabeinhalt aktualisiert.", `share:${contentShare.id}`);
+                })}>Inhalt ersetzen</button><button type="button" className="secondary" disabled={uploading} onClick={() => {setSelected(savedCreateSelection.current); setContentShare(null); if (shareCreateRef.current) shareCreateRef.current.open = false;}}>Abbrechen</button></div>}
+              </details>
             </section>
             <section id="qrcodes" hidden={view !== "qrcodes"}>
-              {qrOpened && <React.Suspense fallback={<p role="status">QR-Werkbank wird geladen …</p>}><QrCodes origin={savedLinkOrigin || defaultOrigin} links={[...links,...shares]}/></React.Suspense>}
+              {qrOpened && <React.Suspense fallback={<p role="status">QR-Werkbank wird geladen …</p>}><QrCodes selection={qrSelection} origin={savedLinkOrigin || defaultOrigin} links={[...links,...shares]} onCreateLink={async url => { const created=await api<{id:string;slug:string;url:string}>("/api/links",{method:"POST",body:JSON.stringify({url})});setLinks(current => [{id:created.id,slug:created.slug,target_url:created.url,active:1,expires_at:null,has_password:0,has_copyable_password:0},...current.filter(link=>link.id!==created.id)]);return created; }}/></React.Suspense>}
             </section>
             <section id="statistiken" hidden={view !== "statistiken"}>
               <Statistics data={analytics} dateTimeSettings={dateTimeSettings} />
             </section>
             <section id="einstellungen" hidden={view !== "einstellungen"}>
               <h1>Einstellungen</h1>
-              <div className="settings-block">
-                <h2 className="slug-settings-heading">Öffentliche Linkadresse <SettingsHelp label="Hinweise zur öffentlichen Linkadresse">Die Adresse ändert weder DNS noch Reverse Proxy oder den geschützten Admin-Ursprung. Für die Anmeldung muss <code>PUBLIC_ORIGIN</code> weiterhin zur verwendeten Adresse passen. Standard: {defaultOrigin}</SettingsHelp></h2>
+              <SettingsSection title="Öffentliche Linkadresse" help={<>Die Adresse ändert weder DNS noch Reverse Proxy oder den geschützten Admin-Ursprung. Für die Anmeldung muss <code>PUBLIC_ORIGIN</code> weiterhin zur verwendeten Adresse passen. Standard: {defaultOrigin}</>}>
                 <form
                   onSubmit={(e) => {
                     e.preventDefault();
@@ -1374,15 +1268,15 @@ function App() {
                     Änderungen speichern
                   </button>
                 </form>
-              </div>
+              </SettingsSection>
+              <TrustedProxySettings notify={(message,error) => error ? setError(message) : setNotice(message,"settings:proxies")}/>
               <StorageSettings notify={(message,error) => error ? setError(message) : setNotice(message,"settings:storage")}/>
               <RegionTimeSettings value={dateTimeSettings} onChange={setDateTimeSettings} notify={(message,error)=>error ? setError(message) : setNotice(message,"settings:datetime")}/>
               <SlugDefaults onSaved={() => void run(async () => {
                 const [link, share] = await Promise.all([post("/api/slugs/suggest", {}) as Promise<{slug:string}>, post("/api/slugs/suggest", {}) as Promise<{slug:string}>]);
                 if(!linkSlugEdited.current) setLinkSlug(link.slug); if(!shareSlugEdited.current) setSlug(share.slug);
               })} notify={(message, error) => error ? setError(message) : setNotice(message, "settings:slugs")}/>
-              <div className="settings-block">
-                <h2>Speicherquellen</h2><p>Verzeichnisse in Docker Compose lesend unter <code>/sources/Name</code> einbinden. Nach einem Container-Neustart erscheinen sie hier als „Name“.</p>
+              <SettingsSection title="Speicherquellen" help={<>Verzeichnisse in Docker Compose lesend unter <code>/sources/Name</code> einbinden. Nach einem Container-Neustart erscheinen sie hier als „Name“.</>}>
                 <ul className="stat-list">
                   {sources.map((s) => (
                     <li key={s.id}>
@@ -1391,7 +1285,7 @@ function App() {
                     </li>
                   ))}
                 </ul>
-              </div>
+              </SettingsSection>
             </section>
           </div>
         </div>

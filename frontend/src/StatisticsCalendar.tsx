@@ -32,7 +32,7 @@ export function StatisticsCalendar({ timeline, locale, selection, onSelect }: {
   const metrics = chartMetrics.filter(m => ["view", "download_start", "transfer_finished"].includes(m.key) || timeline.rows.some(r => r.type === m.key && r.count));
   const other = timeline.rows.some(row => !chartMetrics.some(m => m.key === row.type) && row.count > 0);
   return <div className="statistics-calendar-card">
-    <div className="statistics-card-heading"><div><h2>Tage, an denen etwas passiert ist</h2><p>Aktivität deiner aktuellen Auswahl · UTC · Tag auswählen, um das Log einzugrenzen.</p></div></div>
+    <div className="statistics-card-heading"><div><h2>Tage, an denen etwas passiert ist</h2><p>Aktivität deiner aktuellen Auswahl · UTC · Tag auswählen, um den Stundenverlauf anzusehen.</p></div></div>
     <div className="statistics-calendar-toolbar"><strong aria-live="polite">{new Intl.DateTimeFormat(locale, {month:"long",year:"numeric",timeZone:"UTC"}).format(start)}</strong><div><button type="button" className="secondary" aria-label="Vorheriger Monat" disabled={month <= firstMonth} onClick={() => move(-1)}><ChevronLeft size={16} aria-hidden="true"/></button><button type="button" className="secondary" aria-label="Nächster Monat" disabled={month >= lastMonth} onClick={() => move(1)}><ChevronRight size={16} aria-hidden="true"/></button></div></div>
     <div className="statistics-calendar-grid" aria-label="Aktivitätskalender">
       {Array.from({length:7}, (_, i) => <span className="statistics-weekday" key={i}>{new Intl.DateTimeFormat(locale,{weekday:"short",timeZone:"UTC"}).format(Date.UTC(2026,0,5+i))}</span>)}
@@ -47,6 +47,5 @@ export function StatisticsCalendar({ timeline, locale, selection, onSelect }: {
       })}
     </div>
     <div className="statistics-calendar-legend">{metrics.map(m => <span key={m.key}><i style={{background:m.color}}/>{m.label}</span>)}{other && <span><i style={{background:"var(--stat-grey)"}}/>Weitere Ereignisse</span>}</div>
-    <p className="statistics-note">Farben markieren Tage mit mindestens einem Ereignis dieser Art. Die kleine Zahl zählt alle Ereignisse des Tages, keine Personen. Leere Tage bleiben auswählbar.</p>
   </div>;
 }

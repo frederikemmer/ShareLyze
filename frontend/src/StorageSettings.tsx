@@ -1,3 +1,4 @@
+import { SettingsSection } from "./SettingsSection";
 import { GeoIpSettings } from "./GeoIpSettings";
 import { UploadSettings } from "./UploadSettings";
 import { useEffect, useState } from "react";
@@ -31,7 +32,7 @@ export function StorageSettings({notify}: {notify:(message:string,error?:boolean
   return <>
     <UploadSettings notify={notify}/>
     <GeoIpSettings/>
-    <div className="settings-block"><h2>Aufbewahrung</h2><p>Gelöschte Freigaben sind sofort gesperrt. Nach der Frist werden ausschließlich eigene Uploads ohne weitere Freigabezuordnung bereinigt. Historische Statistikzuordnungen und Kurznamen bleiben erhalten.</p>
+    <SettingsSection title="Aufbewahrung" help="Gelöschte Freigaben sind sofort gesperrt. Nach der Frist werden nur eigene Uploads ohne weitere Freigabezuordnung bereinigt. Historische Statistikzuordnungen und Kurznamen bleiben erhalten.">
     {settings && <form onSubmit={event => {
       event.preventDefault();setBusy(true);
       void call("/api/settings/retention","PUT",settings).then(value => {setSettings(value);notify("Aufbewahrung gespeichert.");}).catch(error => notify(error.message,true)).finally(() => setBusy(false));
@@ -40,10 +41,10 @@ export function StorageSettings({notify}: {notify:(message:string,error?:boolean
       {settings.analyticsLocked && <p>Durch ANALYTICS_RETENTION_DAYS im Deployment festgelegt.</p>}
       {([["deletedShareDays","Gelöschte Freigaben (Tage)"],["orphanUploadDays","Nicht zugeordnete Uploads (Tage)"],["previewDays","Vorschau-Cache (Tage)"]] as const).map(([key,label]) => <label className="compact-field" key={key}><span>{label}</span><input type="number" min={1} max={3650} required value={settings[key]} onChange={e => setSettings({...settings,[key]:Number(e.target.value)})}/></label>)}
       <button disabled={busy}>Aufbewahrung speichern</button>
-    </form>}</div>
-    <div className="settings-block"><h2>Vorschau-Cache</h2><p>Vorschauen werden im Hintergrund und bei Zugriff erstellt. Der Cache ist auf 512 MiB begrenzt und wird stündlich bereinigt. Er lässt sich jederzeit neu aufbauen.</p>
+    </form>}</SettingsSection>
+    <SettingsSection title="Vorschau-Cache" help="Vorschauen entstehen im Hintergrund und bei Zugriff. Der Cache ist auf 512 MiB begrenzt, wird stündlich bereinigt und kann neu aufgebaut werden.">
       {cache && <div role="status" aria-live="polite"><p>{cache.running ? "Vorschauen werden vorbereitet" : "Bereit"} · {cache.completed} von {cache.total} erstellt · {cache.failed} fehlgeschlagen</p>{cache.running && <progress aria-label="Vorschau-Fortschritt" max={Math.max(cache.total,1)} value={cache.completed+cache.failed}/>}<p>{cache.files} Cachedateien · {(cache.bytes/1024**2).toFixed(1)} MiB</p>{cache.error && <p role="alert">{cache.error}</p>}</div>}
       <div className="upload-actions"><button type="button" disabled={busy || cache?.running} onClick={() => void action("/api/previews/warm","POST")}>Vorschauen vorbereiten</button><button type="button" className="secondary" disabled={busy || cache?.running} onClick={() => void action("/api/previews","DELETE")}>Cache leeren</button></div>
-    </div>
+    </SettingsSection>
   </>;
 }

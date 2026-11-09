@@ -1,3 +1,4 @@
+import { encryptLinkPassword, decryptLinkPassword } from "./password-vault";
 import { verifiedTail } from "./verified-stream";
 import { observeTransfer,errorCode,diagnose } from "./transfer-observer";
 import { createVisit,getVisit,previousTransferAttempt } from "./visits";
@@ -93,6 +94,8 @@ export function sharesRouter(
   browseLimit: RequestHandler,
   previewCache = new PreviewCache(),
   geoIp = new GeoIpService(),
+  passwordKey?: Buffer,
+  copyLimit: RequestHandler = (_req, _res, next) => next(),
 ) {
   const router = Router();
   let activeZips = 0;
@@ -194,10 +197,17 @@ export function sharesRouter(
     res.json({
       shares: db
         .prepare(
-          "SELECT s.id,s.title,s.description,s.active,s.expires_at,s.password_hash IS NOT NULL AS has_password,s.created_at,l.slug FROM shares s JOIN links l ON l.share_id=s.id WHERE s.deleted_at IS NULL ORDER BY s.created_at DESC",
+          "SELECT s.id,s.title,s.description,s.active,s.expires_at,s.password_hash IS NOT NULL AS has_password,s.password_encrypted IS NOT NULL AS has_copyable_password,s.created_at,l.slug,CASE WHEN (SELECT count(*) FROM share_items i WHERE i.share_id=s.id)=1 THEN (SELECT i.kind FROM share_items i WHERE i.share_id=s.id LIMIT 1) ELSE 'multiple' END AS content_kind FROM shares s JOIN links l ON l.share_id=s.id WHERE s.deleted_at IS NULL ORDER BY s.created_at DESC",
         )
         .all(),
     });
+  });
+  router.post("/api/shares/:id/password", admin, copyLimit, (req, res) => {
+    const row = db.prepare("SELECT password_hash,password_encrypted FROM shares WHERE id=? AND deleted_at IS NULL").get(req.params.id) as {password_hash:string|null;password_encrypted:string|null}|undefined;
+    if (!row?.password_hash) { res.sendStatus(404); return; }
+    if (!row.password_encrypted || !passwordKey) { res.status(409).json({code:"PASSWORD_NOT_COPYABLE"}); return; }
+    try { res.json({password:decryptLinkPassword(row.password_encrypted,passwordKey,String(req.params.id))}); }
+    catch { res.status(409).json({code:"PASSWORD_NOT_COPYABLE"}); }
   });
   router.get("/api/analytics", admin, (_req, res) => {
     res.json({
@@ -291,7 +301,7 @@ export function sharesRouter(
     try {
       db.transaction(() => {
         db.prepare(
-          "INSERT INTO shares(id,title,password_hash,expires_at,created_at,description) VALUES (?,?,?,?,?,?)",
+          "INSERT INTO shares(id,title,password_hash,expires_at,created_at,description,password_encrypted) VALUES (?,?,?,?,?,?,?)",
         ).run(
           id,
           title?.trim() || short,
@@ -299,6 +309,7 @@ export function sharesRouter(
           expiresAt ? new Date(expiresAt).toISOString() : null,
           new Date().toISOString(),
           description?.trim() || null,
+          password && passwordKey ? encryptLinkPassword(password,passwordKey,id) : null,
         );
         const insert = db.prepare(
           "INSERT INTO share_items(id,share_id,source_id,relative_path,kind) VALUES (?,?,?,?,?)",
@@ -325,7 +336,7 @@ export function sharesRouter(
   router.delete("/api/shares/:id", admin, (req,res) => {
     db.transaction(() => {
       const timestamp = new Date().toISOString();
-      const changed = db.prepare("UPDATE shares SET deleted_at=?,active=0,password_hash=NULL WHERE id=? AND deleted_at IS NULL").run(timestamp,req.params.id);
+      const changed = db.prepare("UPDATE shares SET deleted_at=?,active=0,password_hash=NULL,password_encrypted=NULL WHERE id=? AND deleted_at IS NULL").run(timestamp,req.params.id);
       if (!changed.changes) {res.sendStatus(404);return;}
       db.prepare("UPDATE links SET active=0,deleted_at=? WHERE share_id=?").run(timestamp,req.params.id);
       db.prepare("DELETE FROM share_grants WHERE share_id=?").run(req.params.id);
@@ -442,6 +453,8 @@ export function sharesRouter(
             normalized,
             req.params.id,
           );
+        if (password !== undefined)
+          db.prepare("UPDATE shares SET password_encrypted=? WHERE id=?").run(password && passwordKey ? encryptLinkPassword(password,passwordKey,String(req.params.id)) : null, req.params.id);
         if (password !== undefined)
           db.prepare("DELETE FROM share_grants WHERE share_id=?").run(
             req.params.id,

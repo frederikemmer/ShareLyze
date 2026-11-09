@@ -1,0 +1,15 @@
+QR logo image codecs
+
+heic-to 1.6.7 — LGPL-3.0-or-later. Includes libheif and libde265 components.
+Source and build instructions: https://github.com/hoppergee/heic-to
+Exact npm package: https://registry.npmjs.org/heic-to/-/heic-to-1.6.7.tgz
+Upstream sources: https://github.com/strukturag/libheif and https://github.com/strukturag/libde265
+Licenses: heic-to-LGPL-3.0.txt and libheif-LGPL-and-GPL.txt
+
+@jsquash/jxl 1.3.0 — Apache-2.0; code derived from Google Squoosh.
+Source: https://github.com/jamsinclair/jSquash
+Exact npm package: https://registry.npmjs.org/@jsquash/jxl/-/jxl-1.3.0.tgz
+Uses libjxl: https://github.com/libjxl/libjxl
+Licenses: jsquash-Apache-2.0.txt and libjxl-BSD-3-Clause.txt
+
+The codecs are loaded locally and separately on demand. No image is sent to these sites.

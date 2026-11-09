@@ -6,7 +6,7 @@ export function openDatabase(filename: string): Database.Database {
   db.pragma("foreign_keys = ON");
   db.pragma("journal_mode = WAL");
   const version = db.pragma("user_version", { simple: true }) as number;
-  if (version > 15) {
+  if (version > 16) {
     db.close();
     throw new Error("Database version is newer than this application");
   }
@@ -62,5 +62,6 @@ export function openDatabase(filename: string): Database.Database {
   if (version < 13) db.transaction(() => { db.exec("ALTER TABLE shares ADD COLUMN deleted_at TEXT; ALTER TABLE shares ADD COLUMN purged_at TEXT; PRAGMA user_version = 13;"); })();
   if (version < 14) db.transaction(() => { db.exec("ALTER TABLE events ADD COLUMN details_json TEXT; CREATE INDEX events_type_time ON events(type,created_at); PRAGMA user_version = 14;"); })();
   if (version < 15) db.transaction(() => { db.exec("CREATE TABLE IF NOT EXISTS public_visits(token_hash TEXT PRIMARY KEY,id TEXT NOT NULL UNIQUE,link_id TEXT NOT NULL REFERENCES links(id) ON DELETE CASCADE,share_id TEXT NOT NULL REFERENCES shares(id) ON DELETE CASCADE,event_id INTEGER REFERENCES events(id) ON DELETE SET NULL,expires_at TEXT NOT NULL,client_json TEXT,campaign_json TEXT NOT NULL,reports INTEGER NOT NULL DEFAULT 0); CREATE INDEX IF NOT EXISTS public_visits_expiry ON public_visits(expires_at); PRAGMA user_version = 15;"); })();
+  if (version < 16) db.transaction(() => { db.exec("ALTER TABLE shares ADD COLUMN password_encrypted TEXT; PRAGMA user_version = 16;"); })();
   return db;
 }

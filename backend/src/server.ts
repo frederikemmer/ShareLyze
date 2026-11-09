@@ -30,7 +30,7 @@ const db = openDatabase(dbPath);
 const previewCache = new PreviewCache(previewRoot);
 const geoIp = new GeoIpService(resolve(configRoot,"geoip"));
 await geoIp.load();
-const encryptedExample = db.prepare("SELECT id,password_encrypted FROM links WHERE password_encrypted IS NOT NULL LIMIT 1").get() as {id:string;password_encrypted:string}|undefined;
+const encryptedExample = db.prepare("SELECT id,password_encrypted FROM links WHERE password_encrypted IS NOT NULL UNION ALL SELECT id,password_encrypted FROM shares WHERE password_encrypted IS NOT NULL LIMIT 1").get() as {id:string;password_encrypted:string}|undefined;
 const passwordKey = loadPasswordKey(passwordKeyPath, !!encryptedExample);
 if(encryptedExample) decryptLinkPassword(encryptedExample.password_encrypted,passwordKey,encryptedExample.id);
 const retentionDays = process.env.ANALYTICS_RETENTION_DAYS ? Number(process.env.ANALYTICS_RETENTION_DAYS) : null;

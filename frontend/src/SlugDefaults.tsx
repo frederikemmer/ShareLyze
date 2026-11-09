@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createAutosave } from "./autosave";
-import { SettingsHelp } from "./SettingsHelp";
+import { SettingsSection } from "./SettingsSection";
 import type { SlugSettings } from "../../backend/src/slug-settings";
 
 export function SlugDefaults({notify, onSaved}: {onSaved: () => void; notify: (message: string, error?: boolean) => void}) {
@@ -39,7 +39,7 @@ export function SlugDefaults({notify, onSaved}: {onSaved: () => void; notify: (m
     if(Number.isInteger(next.length) && next.length >= 4 && next.length <= 64) autosave.schedule(next);
     else autosave.cancel();
   }
-  return <div className="settings-block"><h2 className="slug-settings-heading">Kurznamen<SettingsHelp label="Hinweise zu Kurznamen">Aufrufregeln gelten für neu angelegte Links. Bestehende Links behalten ihre Regeln. Namen, die sich nur in Groß-/Kleinschreibung unterscheiden, bleiben zur Vermeidung von Verwechslungen gesperrt.</SettingsHelp></h2>
+  return <SettingsSection title="Kurznamen" help="Aufrufregeln gelten für neu angelegte Links. Bestehende Links behalten ihre Regeln. Namen, die sich nur in Groß-/Kleinschreibung unterscheiden, bleiben zur Vermeidung von Verwechslungen gesperrt.">
     <form onSubmit={event => event.preventDefault()}>
       <div className="slug-default-fields">
         <label className="compact-field"><span>Stellen</span><input type="number" required min={4} max={64} value={settings.length} onChange={event => update({length:Number(event.target.value)})}/></label>
@@ -50,5 +50,5 @@ export function SlugDefaults({notify, onSaved}: {onSaved: () => void; notify: (m
       <label className="inline"><input type="checkbox" checked={settings.avoidAmbiguous} onChange={event => update({avoidAmbiguous:event.target.checked})}/>Verwechselbare Zeichen vermeiden (0, O, o, 1, I, i, l)</label>
       {example && <p className="slug-example">Beispiel: <code>{example}</code></p>}
     </form>
-  </div>;
+  </SettingsSection>;
 }

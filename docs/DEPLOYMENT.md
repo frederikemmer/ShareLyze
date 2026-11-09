@@ -10,6 +10,8 @@ The container starts as root only to prepare the private configuration, database
 
 Point Zoraxy or another HTTPS proxy to the ShareLyze container on port 3000, or to the chosen NAS host port, and forward the original Host and protocol. Set `TRUSTED_PROXIES` only after determining the proxy's actual stable IP/CIDR; do not guess or trust all clients. `PUBLIC_ORIGIN` must match the public admin URL. The `ghcr.io/frederikemmer/sharelyze:dev` image must exist and be accessible before the following command can pull it; this has not yet been established for this project:
 
+Alternatively, configure trusted proxy IPs or CIDRs under Einstellungen → Vertrauenswürdige Proxys. The displayed direct peer address helps identify the connection but must be verified before trusting it. The setting takes effect immediately and persists in the database; a nonempty `TRUSTED_PROXIES` environment variable takes precedence. Configure all trusted hops and ensure the proxy correctly sets or appends `X-Forwarded-For` without allowing clients to forge the trusted part of the chain. Express also uses forwarded protocol and host headers from trusted proxies; ShareLyze still uses its configured public origin for security-sensitive URLs. Existing analytics events are not rewritten.
+
 ```sh
 docker compose -f docker-compose.nas.yml config
 docker compose -f docker-compose.nas.yml up -d

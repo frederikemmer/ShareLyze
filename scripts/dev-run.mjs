@@ -1,6 +1,6 @@
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { resolve, dirname } from "node:path";
+import { resolve } from "node:path";
 import { mkdirSync } from "node:fs";
 import { hostname, networkInterfaces } from "node:os";
 
@@ -37,25 +37,11 @@ const env = {
   SHARELYZE_DEV_ORIGINS: localAliases ? JSON.stringify(devOrigins) : "[]",
   SHARELYZE_DEV_HOSTS: localAliases ? JSON.stringify(devHosts) : "[]",
 };
-let backendCommand = process.execPath;
-let backendArgs = ["--watch", "--import", "tsx", resolve("backend/src/server.ts")];
-let backendEnv = env;
-if (process.platform === "darwin") {
-  const dataRoot = resolve(process.env.DATA_ROOT || ".local-config");
-  const configRoot = resolve(process.env.CONFIG_ROOT || resolve(dataRoot,"config"));
-  const dbPath = resolve(process.env.DB_PATH || resolve(dataRoot,"database/sharelyze.db"));
-  const uploadRoot = resolve(process.env.UPLOAD_ROOT || resolve(dataRoot,"uploads"));
-  const previewRoot = resolve(process.env.PREVIEW_ROOT || resolve(dataRoot,"previews"));
-  for(const directory of [dataRoot,configRoot,dirname(dbPath),uploadRoot,previewRoot]) mkdirSync(directory,{recursive:true});
-  const mounts = [[resolve("backend"),"/app/backend",true],[resolve("shared"),"/app/shared",true],[dataRoot,dataRoot,false],[configRoot,configRoot,false],[dirname(dbPath),dirname(dbPath),false],[uploadRoot,uploadRoot,false],[previewRoot,previewRoot,false],[sourcesRoot,"/sources",true]];
-  if (mounts.some(([src, dst]) => src.includes(",") || dst.includes(",")))
-    throw new Error("Docker development mounts cannot contain commas in paths");
-  console.log("Building Linux development backend (Docker Desktop required)...");
-  const build = spawnSync("docker", ["build", "-t", "sharelyze-local-dev", "."], { stdio: "inherit" });
-  if (build.status !== 0) throw new Error("Could not build Linux development backend. Check Docker Desktop.");
-  backendEnv = { ...env, NODE_ENV: "development", BACKEND_HOST: "0.0.0.0", BACKEND_PORT: "3000", DATA_ROOT: dataRoot, CONFIG_ROOT: configRoot, ...(process.env.DB_PATH ? {DB_PATH:dbPath} : {}), UPLOAD_ROOT: uploadRoot, PREVIEW_ROOT:previewRoot, SOURCES_ROOT:"/sources", SHARELYZE_CONTAINER_DEV: "1" };
-  backendCommand = "docker";
-  backendArgs = ["run", "--rm", "-i", "--init", "--user", `${process.getuid()}:${process.getgid()}`, "--entrypoint", "node", "-p", `127.0.0.1:${backendPort}:3000`, ...mounts.filter((mount,index,all) => all.findIndex(other => other[1] === mount[1]) === index).flatMap(([src, dst, readonly]) => ["--mount", `type=bind,src=${src},dst=${dst}${readonly ? ",readonly" : ""}`]), ...["NODE_ENV", "BACKEND_HOST", "BACKEND_PORT", "DATA_ROOT", "CONFIG_ROOT", "DB_PATH", "UPLOAD_ROOT", "PREVIEW_ROOT", "SOURCES_ROOT", "PUBLIC_ORIGIN", "SETUP_TOKEN", "SHARELYZE_LOCAL_DEV", "SHARELYZE_CONTAINER_DEV", "SHARELYZE_DEV_ORIGINS", "SHARELYZE_DEV_HOSTS"].flatMap((key) => ["-e", key]), "sharelyze-local-dev", "--watch", "--import", "tsx", "backend/src/server.ts"];
+const backendCommand = process.execPath;
+const backendArgs = ["--watch", "--import", "tsx", resolve("backend/src/server.ts")];
+const backendEnv = env;
+if (process.platform !== "linux") {
+  console.warn("Native development: source browsing, downloads and uploads require Linux.");
 }
 console.log(
   "ShareLyze development mode. Do not expose this unfinished application publicly.",

@@ -1,5 +1,50 @@
 # ShareLyze – Projektziel und MVP-Plan
 
+Einstellungen: Linkadresse, Standort/Netzanbieter, Aufbewahrung, Vorschau-Cache, Region/Zeitformat, Kurznamen und Speicherquellen sind wie Proxy und Upload-Filter einklappbar. Erläuterungen in Überschriften-Tooltips zusammengefasst; Aktionen und Entwürfe bleiben beim Einklappen erhalten. Build erfolgreich; Preview-Snapshot lief in einen Timeout, daher keine interaktive Browserprüfung.
+
+
+Upload-Filter: Regelbereich einklappbar; Aktivierung und Zurücksetzen bleiben in der Kopfzeile erreichbar.
+
+
+Upload-Filter: Schalter und Zurücksetzen in der Kopfzeile, Erklärungen als Tooltips, automatische Speicherung nach Eingabepause mit Benachrichtigung und Validierungsfehlern. Zurücksetzen betrifft die Regeln und erhält den Aktivierungszustand. Build und bestehende Upload-Einstellungstests erfolgreich (drei bestanden, ein plattformabhängig übersprungen); Browserzustand gesehen, interaktive Autosave-Prüfung offen.
+
+
+Proxy-Einstellungen: Bereich einklappbar, Erklärungen an den jeweiligen Überschriften; Änderungen werden nach 1,2 Sekunden automatisch gespeichert und serverseitig unmittelbar angewendet. Ungültige Eingaben bleiben sichtbar mit Fehler; Umgebungsvariablen-Sperre bleibt bestehen. Build und bestehender Proxy-API-Test erfolgreich; eingeklappter Zustand im Browser gesehen, interaktive Autosave- und reale Reverse-Proxy-Prüfung stehen aus.
+
+
+QR-Werkbank: Zusätzlichen Bearbeiten-Button im Kopf entfernt; Link und Kontext bleiben über die Schrittleiste erreichbar.
+
+
+QR-Logo: Größe bei gewähltem Logo zwischen 8 und 18 % der Modulmatrix einstellbar (Standard 12 %), identisch für Vorschau und Export. Entfernen durch Wahl einer anderen Vorlage. Build und Decoderprüfung der Grenzwerte bei hoher Fehlerkorrektur bestanden; physische Scans und weitere Kombinationen bleiben offen.
+
+
+QR-Fehlerkorrektur: Hilfe auf eine kompakte Tabelle der wiederherstellbaren Codewörter je Stufe reduziert.
+
+
+QR-Logoauswahl: Gewähltes Standard- oder eigenes Logo ersetzt das Bildsymbol in der Auswahlschaltfläche; Entfernen liegt daneben.
+
+
+QR-Logo-Hilfe: Technischen Hinweis zu SVG-Inhalten aus der Oberfläche entfernt; die Formatliste und Validierung bleiben bestehen.
+
+
+QR-Code „Weich“: Module werden als gemeinsamer SVG-Pfad gezeichnet, um Rasterkanten zwischen benachbarten Flächen zu vermeiden; freiliegende Ecken haben größeren Radius, Funktionsmodule bleiben eckig. Build und QR-Decoderprüfungen erfolgreich; visuelle Browser- und physische Scanprüfung stehen aus.
+
+
+QR-Werkbank: In der einspaltigen Ansicht Abstand und oberen Innenabstand vor der Vorschau von je 24 auf 12 px reduziert.
+
+
+Freigabebearbeitung: Flexible Eingabefelder und Aktionsleiste wie bei Kurzlinks; Gültigkeit ersetzt den Aktiv-Schalter. Bereits deaktivierte Freigaben bleiben bis zu einer ausdrücklichen Änderung der Gültigkeit deaktiviert. „Inhalt ändern“ öffnet den bestehenden Auswahlbereich mit eigener Überschrift; die Auswahl ersetzt den Inhalt erst nach Bestätigung, Abbrechen stellt die vorherige Erstellungsauswahl wieder her. Build erfolgreich; Gesamttests: 66 bestanden, 6 übersprungen, ein unabhängiger QR-SVG-Test fehlgeschlagen (`xml:base`). Interaktive Prüfung des neuen Ablaufs steht aus.
+
+
+Freigabeerstellung: Gültigkeit, Passwort, Erstellen und Abbrechen bilden eine gemeinsame, nicht umbrechende Aktionsgruppe; bei Platzmangel wechselt die Gruppe zusammen in die nächste Zeile.
+
+
+Freigabenverwaltung: Ablauf und Passwortstatus wie bei Kurzlinks in der Zeile; Passwortkopie über authentifizierten, begrenzten Endpunkt und verschlüsselte Speicherung (Schema 16). Bestehende Passwörter müssen zum Kopieren neu gesetzt werden. Aktivierung und Löschen in der Bearbeitung. Build und lokale Suite geprüft (63 bestanden, 6 übersprungen); Browserprüfung blockiert, da die laufende API HTTP 500 lieferte. Passwortablauf und Migration benötigen zusätzliche gezielte Integrationsprüfung.
+
+
+Lokale Entwicklung: Die plattformspezifischen Starter starten Frontend und Backend nativ ohne Docker; Vite aktualisiert das Frontend und Node startet das Backend bei Änderungen neu. Sichere Quellen- und Uploadfunktionen setzen weiterhin Linux voraus; macOS und Windows sind hierfür eingeschränkt. Plattformübergreifende Funktionsprüfung steht aus.
+
+
 Entwicklungsserver: Kurzlinks mit Großbuchstaben und Query-Parametern werden nun wie andere Kurzlinks an das Backend weitergeleitet, statt durch den SPA-Fallback auf der Admin-Oberfläche zu landen. Build und lokale Tests erfolgreich (38 bestanden, fünf übersprungen); Browserprüfung und Prüfung einer konkreten NAS-/Reverse-Proxy-Konfiguration stehen aus. Der Entwicklungsserver muss für die geänderte Vite-Konfiguration neu gestartet werden.
 
 Stand: 2. November 2026. Dieses Dokument hält die bisher besprochenen Entscheidungen fest und ist ein Ausgangspunkt für nachfolgende Entwicklungsagents. Es beschreibt das Zielbild; den tatsächlichen Stand hält der Abschnitt „Umsetzungsstand“ fest.
@@ -507,6 +552,12 @@ Der Abschlussabgleich mit konkreten Auditbefunden, Korrekturen und Prüfgrenzen 
 - **Geprüft:** Echte isolierte Containerstreams: 32 pausierte Downloads angenommen, 33. mit 503 abgewiesen; nach Verbindungsende 32 strukturierte Abbruchlogs mit Teilbytes/Dauer und mehreren möglichen Ursachen, Kapazität freigegeben. Geänderte Datei- und ZIP-Streams als source_changed protokolliert und nicht als erfolgreich abgeschlossen gezählt. Ein-/Vier-Mount-Start mit Upload/Cache/Löschung/Neustart weiterhin erfolgreich. Produktions-Dependency-Audit ohne bekannte Lücken.
 - **Offen:** Eigene interaktive Browser-/Touch-/Responsive-/Screenreaderprüfung der neuen Telemetrie-/Kampagnen-/Heatmap-Bereiche und reale Browsermessungen über HTTPS; echte NAS-/Proxy-/Netzunterbrechungsprüfung. Keine allgemeine Last-/Sicherheitsfreigabe. Parallele Statistik-Design-/Graphprüfungen sind eigenständige Nachweise. Änderungen lokal; kein Commit/Push oder Deployment in diesem Auftrag.
 
+### Vertrauenswürdige Proxys in den Einstellungen
+
+- **Umgesetzt:** Administratoren können Proxy-IP-Adressen und CIDR-Netze persistent eintragen; Änderungen gelten sofort für Express, Statistik und Rate-Limits. Eine nichtleere Umgebungsvariable `TRUSTED_PROXIES` hat Vorrang. Die direkt verbundene Adresse wird zur Orientierung angezeigt und nicht automatisch als vertrauenswürdig übernommen. Weitergeleitete Adressen setzen korrekt konfigurierte Proxy-Header und eine vollständig eingetragene vertrauenswürdige Proxy-Kette voraus; bestehende Ereignisse bleiben unverändert.
+- **Geprüft:** Produktionsbuild sowie gesamte lokale Testsuite (72 bestanden, 6 übersprungen); zusätzlicher HTTP-Test für Authentifizierung, Origin-Schutz, Validierung, gefälschte Header, Proxy-Ketten, Persistenz, Überschreibung durch Umgebungsvariable und Entfernung der Freigabe.
+- **Offen:** Interaktive Browserprüfung und Betrieb hinter dem tatsächlichen Reverse Proxy bzw. NAS; dessen direkte Adresse und Header-Konfiguration müssen vor Ort überprüft werden.
+
 
 ### QR-Werkbank: weitere Designvarianten (6. November 2026)
 
@@ -539,3 +590,112 @@ Der Abschlussabgleich mit konkreten Auditbefunden, Korrekturen und Prüfgrenzen 
 - **Korrigiert:** `verifiedTail` hält bei Einzeldateidownloads den letzten Quellblock zurück, prüft beim Flush die vorhandenen Integritätsmerkmale und gibt erst danach den Rest frei. Quellblockgröße explizit 64 KiB; keine vollständige Kopie oder Archivierung. Bei Änderung/Lesefehler wird der zurückgehaltene Block verworfen und die Antwort abgebrochen; Dateideskriptor/Streams werden beim HTTP-Ende geschlossen. Range-, Zugriffsschutz- und Kapazitätsregeln bleiben wirksam. Tests oder Workflowbedingungen wurden nicht abgeschwächt.
 - **Geprüft:** Produktionsbuild und neues Docker-Image erfolgreich. Lokal 63 Tests bestanden/sechs Linux-Tests übersprungen; im Linux-Container sämtliche 69 Tests bestanden. Neue Tests prüfen Ein-/Mehrblock- und Leerdateien, Prüfung vor Freigabe der letzten Bytes sowie Verwerfen bei Integritätsfehler. Regression nachweislich rot mit altem Code/grün mit neuem. Echte isolierte Containerprüfungen: 32 pausierte Downloads, 33. abgewiesen, Kapazität nach Abbruch frei; 32 strukturierte Abbruchlogs. Während Datei-/ZIP-Transfer veränderte Quellen nicht als abgeschlossen gezählt, mit `source_changed` protokolliert.
 - **Veröffentlichung:** Fix für `dev`; tatsächliche GitHub-Actions-Ergebnisse am Fixcommit separat prüfen. Keine allgemeine Last-/Sicherheits-/NAS-Abnahme aus diesen Nachweisen ableiten.
+
+### QR-Code: weiche zusammenhängende Formen (9. November 2026)
+
+- **Umgesetzt:** Im Stil „Weich“ verbinden sich benachbarte dunkle Module an ihren gemeinsamen Kanten; außenliegende Ecken bleiben gerundet. Erkennungsmuster, Ruhezone, Farben und gemeinsame SVG-/PNG-Grundlage bleiben erhalten.
+- **Geprüft:** Produktionsbuild und bestehende QR-Decoderprüfungen erfolgreich (24 Kombinationen). Browserseite aufgerufen; der Stilwechsel und echte Smartphone-/Druckscans wurden nicht interaktiv geprüft.
+
+### QR-Gestaltungsvorlagen: zutreffende Vorschauen (9. November 2026)
+
+- **Umgesetzt:** Die Vorschaubilder für Klar und Weich verwenden den aktuellen QR-Link und die gewählten Farben mit der jeweiligen Modulform. „Mit Logo“ zeigt ein vorhandenes eigenes Logo in der generierten Vorschau; ursprünglich wurde das ShareLyze-Symbol nur beispielhaft angezeigt, inzwischen ist es der Standard beim Auswählen der Vorlage (siehe unten). Bei ungültiger Farbkombination bleibt eine neutrale Beispielvorschau sichtbar.
+- **Geprüft:** Produktionsbuild erfolgreich. Die Entwicklungsseite war erreichbar; eine Sichtprüfung des Vorlagenzustands blieb offen, da die aktive Annotationsoberfläche den Klick abgefangen hat. Logoauswahl und tatsächlicher Export wurden nicht interaktiv geprüft.
+
+### QR-Code: Kontextangaben kompakt (9. November 2026)
+
+- **Umgesetzt:** Der erste Schritt heißt „Link & Kontext“. Die Kontextfelder sind standardmäßig eingeklappt und können separat geöffnet werden; ihre Werte bleiben beim Schrittwechsel erhalten. Medium bleibt auch im eingeklappten Zustand standardmäßig `qr` und geht in den erzeugten Link ein. Ein zugänglicher Info-Hinweis erklärt die Auswertung nach Anlass/Verbreitungsweg und die öffentliche Sichtbarkeit der Angaben.
+- **Geprüft:** Produktionsbuild erfolgreich. Browser-Snapshot der laufenden Entwicklungsseite konnte wegen eines Timeouts nicht abgeschlossen werden; interaktive Prüfung von Aufklappen, Tooltip und Schrittwechsel steht aus.
+
+- **Gestaltungsanpassung:** Den sichtbaren Zusatz „optional“ neben „Kontext“ auf Nutzerwunsch entfernt; Funktion und Standardwert bleiben erhalten.
+- **Gestaltungsanpassung:** Den Hinweis zu lokaler Vorschau/Export und Schrittwechsel unter der QR-Vorschau auf Nutzerwunsch entfernt.
+
+### Header-Navigation: aktive Pille ausgerichtet (9. November 2026)
+
+- **Korrigiert:** Ausgangsposition des aktiven Hintergrunds von 7 auf 6 px angepasst; sie entspricht nun dem Innenabstand der Navigation.
+- **Geprüft:** Im vorhandenen Browser bei aktivem QR-Menüpunkt liegen Pille und Schaltfläche auf denselben Koordinaten (0 px Abweichung, 42 × 38 px); Abstände aller fünf Navigationspunkte jeweils 46 px. Produktionsbuild erfolgreich. Andere Ansichten wurden nicht einzeln angeklickt.
+
+- **QR-Navigation:** Die Zurück-Schaltflächen auf Nutzerwunsch entfernt. Alle drei Schritte bleiben über das Toggle direkt anwählbar; anschließend wurden auf Nutzerwunsch auch die Weiter-Schaltflächen samt Aktionszeile entfernt.
+
+
+### QR-Code: ShareLyze-Symbol als Logo-Vorgabe (9. November 2026)
+
+- **Umgesetzt:** „Mit Logo“ aktiviert ohne Dateidialog das ShareLyze-Symbol. Ein ausdrücklich hochgeladenes PNG/JPEG/WebP ersetzt die Vorgabe und bleibt beim Wechsel zwischen den Vorlagen für erneute Auswahl erhalten; das Entfernen des Logos verwirft die eigene Auswahl. Vorschau und Exporte verwenden das eingebettete PNG identisch. Asynchrone Logoanfragen werden gegen neuere Auswahlen abgesichert.
+- **Asset:** `logo-qr.png` wird vom bestehenden Icon-Generator aus dem kanonischen hellen transparenten Logo abgeleitet; kein externer Dienst.
+- **Geprüft:** Produktionsbuild erfolgreich; QR-Decoderprüfung inklusive des tatsächlichen ShareLyze-Assets erfolgreich. Browserseite eingesehen, aber die Auswahl und der Upload wegen aktiver Annotationsoberfläche nicht interaktiv bedient; realer Browser-PNG-Export und Smartphone-Scan bleiben offen.
+
+### QR-Codes: ausgewählten Link neben Titel (9. November 2026)
+
+- **Umgesetzt:** Link-/Kontextanzeige mit Bearbeiten-Aktion steht neben „QR-Codes“ statt in einer eigenen Zeile. Lange Angaben werden bei Platzmangel mit Auslassung gekürzt und bleiben über den Titelhinweis einsehbar; die direkte Bearbeitung bleibt erreichbar.
+- **Geprüft:** Produktionsbuild erfolgreich; laufende Browseransicht bei 1019 px: Titel und Link stehen nebeneinander, ohne horizontalen Seitenüberlauf. Schmalere Ansichten und Tastaturbedienung nicht interaktiv geprüft.
+
+### QR-Gestaltung: Fehlerkorrektur und kompakter Abstand (9. November 2026)
+
+- **Umgesetzt:** „Erweiterte Gestaltung“ bietet die Fehlerkorrektur L, M, Q und H; H bleibt die Vorgabe. Auswahl wirkt auf Vorschau, Vorlagen und SVG-/PNG-Export. Bei Logo und einer anderen Stufe als H erscheint eine Empfehlung zum Testen. Die redundante Einstellung für abgerundete Punkte und der bisherige allgemeine Hinweis wurden entfernt.
+- **Gestaltung:** Rahmen-Checkbox steht links neben ihrer Beschriftung. Abstand unter dem Toggle und oberer Innenabstand der Einstellungsfläche reduziert; erzwungene Mindesthöhe entfernt.
+- **Geprüft:** Produktionsbuild und QR-Decoderprüfungen erfolgreich, einschließlich aller vier Fehlerkorrekturstufen. Laufende Browseransicht: Checkbox als Flexzeile links und vertikal zentriert, oberer Innenabstand 0 px, Vorgabe H und Vorschau vorhanden. Keine interaktive Prüfung aller Auswahl-/Exportvarianten oder physischer Scans.
+
+- **QR-Export:** Den Hinweis zu Drucktest und Linkgültigkeit auf Nutzerwunsch aus der Oberfläche entfernt.
+
+
+### QR-Code: JPG-Export und erweiterte Logoformate (9. November 2026)
+
+- **Umgesetzt:** Export als JPG zusätzlich zu PNG/SVG, gleiche wählbare Breite und lokal im Browser gerendertes Ergebnis; JPEG-Qualität 95 %. In der Schaltfläche „Logo wählen“ erscheint nur das Größenlimit, ein Info-Hinweis nennt die Formate PNG, JPEG, WebP, HEIC/HEIF, JPEG XL (JXL) und SVG. Nutzer bestätigte JPEG XL als gemeintes Format.
+- **Logoimport:** HEIC/HEIF und JPEG XL werden bei Bedarf lokal im Browser dekodiert und in das bestehende 256-px-PNG überführt; kein Serverupload. Die Decoder werden getrennt erst bei Nutzung geladen. SVG wird vor lokalem Rastern geprüft; aktive Elemente, externe Verweise, XML-Deklarationen außer einfachem XML-Header, Doctype/Entities und CSS-Escapes werden abgelehnt. Somit sind nicht alle beliebigen SVG-Dateien akzeptiert, insbesondere keine Style-Elemente oder eingebetteten Bilder. Eingaben bleiben auf 2 MiB, die Bilddimensionen nach dem Dekodieren auf 4096 × 4096 begrenzt; der jeweilige Decoder kann beim Einlesen größere Zwischenressourcen benötigen. Fehler erhalten eine sichtbare Meldung; bisheriges Logo bleibt erhalten.
+- **Lizenzen:** `heic-to` 1.6.7 (LGPL-3.0-or-later, mit libheif/libde265) und `@jsquash/jxl` 1.3.0 (Apache-2.0, mit libjxl BSD-3-Clause); Hinweise, Lizenztexte und Quelllinks unter `frontend/public/licenses/qr-codecs/`, im Build unter `/licenses/qr-codecs/` ausgeliefert. `happy-dom` ausschließlich für Tests.
+- **Geprüft:** Produktionsbuild und lokale Suite (67 bestanden, sechs Linux-Tests übersprungen) sowie Produktions-Dependency-Audit ohne bekannte Lücken. Browserprüfung in separatem Tab: lokale HEIC-, JXL- und SVG-Dateien ausgewählt und als PNG-Logo angezeigt; SVG mit externem Bild abgewiesen und vorheriges Logo beibehalten. JPG im Browser tatsächlich heruntergeladen, als JPEG 2048 × 2048 erkannt und per jsQR mit erwartetem `utm_medium=qr` dekodiert. Automatisierte Tests prüfen SVG mit interner Maske, Ablehnung aktiver/externer Inhalte und Größen-/Formatgrenzen. Testtab geschlossen. Keine physische Scan-/Druckprüfung und kein breiter Browser-/Formatkompatibilitätsnachweis; HEIC-/JXL-Decodierung erfordert ausreichend Browserressourcen und bei JXL WebAssembly.
+
+- **QR-Kontext:** Den markierten Hinweis unter den Kontextfeldern auf Nutzerwunsch entfernt; die Erläuterung im Info-Tooltip bleibt verfügbar.
+
+### QR-Fehlerkorrektur: Erläuterung (9. November 2026)
+
+- **Umgesetzt:** Info-Tooltip neben der Stufenauswahl nennt die ungefähre Wiederherstellungsrate bezogen auf Codewörter: L 7 %, M 15 %, Q 25 %, H 30 %. Er erklärt, dass dies keine garantierte beschädigbare Fläche ist, Erkennungsmuster lesbar bleiben müssen und höhere Stufen den Code verdichten können. Quelle: DENSO WAVE, https://www.qrcode.com/en/about/error_correction.html.
+- **Geprüft:** Produktionsbuild erfolgreich. In separatem Browsertab den Bereich geöffnet, Tooltip per Hover und Klick angezeigt und per Escape geschlossen; Inhalt und Vorgabe H überprüft. Tab geschlossen. Keine vollständige Screenreaderprüfung.
+
+### QR-Link: Kopieren im gemeinsamen Rahmen (9. November 2026)
+
+- **Umgesetzt:** QR-Link und Kopier-Icon stehen in einem gemeinsamen, auch bei langen URLs umbruchfähigen Rahmen. Das Lucide-Kopiersymbol animiert beim Hover und Tastaturfokus wie die bestehenden Aktionen; bei reduzierter Bewegung entfällt die Animation. Die Überschrift „Vorschau“ wurde entfernt.
+- **Geprüft:** Produktionsbuild erfolgreich. In separatem Browsertab bei 1280 und 390 px umschließt der Rahmen Link und Kopierschaltfläche ohne Seitenüberlauf; Hover-Animation beobachtet. Der Kopiervorgang selbst wurde nicht erneut ausgelöst. Testtab geschlossen.
+
+### QR-Export: SVG-Größe im bestehenden Feld (9. November 2026)
+
+- **Umgesetzt:** Das Breiten-Dropdown bleibt bei SVG sichtbar, ist deaktiviert und zeigt „Beliebig skalierbar“. Für PNG/JPG bleibt die zuletzt gewählte Pixelbreite beim Formatwechsel erhalten.
+- **Geprüft:** Produktionsbuild erfolgreich. Im separaten Browsertab 4096 px gewählt, zu SVG gewechselt und deaktiviertes Feld samt Text geprüft; nach Wechsel zu JPG waren 4096 px wieder aktiv. Testtab geschlossen.
+
+
+### QR-Codes: bestehende und eigene Links (9. November 2026)
+
+- **Umgesetzt:** Erster Schritt kurz „Link“. Toggle zwischen vorhandenem Kurzlink/Freigabelink und eigener externer HTTP(S)-Adresse; auch bei leerer Kurzlinkliste verfügbar. Direkte URLs werden ohne Ergänzung von UTM-Parametern kodiert, einschließlich vorhandener Query und Fragment. Für Direktlinks erfasst ShareLyze keine eigenen Aufrufstatistiken; der Kontextbereich steht für ShareLyze-Links zur Verfügung. Benutzername/Passwort in URLs und andere Protokolle werden zurückgewiesen.
+- **Kurzlink optional:** Bei gültiger eigener Adresse bietet „Kurzlink erstellen“ explizit die Anlage über die bestehende authentifizierte API an; kein automatischer POST. Der generierte Slug verwendet bestehende Servervorgaben. Nach Erfolg wird der neue Kurzlink unmittelbar in die App-Liste übernommen und ausgewählt; `utm_medium=qr` und optionale Kontextwerte gelten für den ShareLyze-Link. Eingabe und erneute Erstellung sind während der Anfrage gesperrt, Fehler bleiben sichtbar. Auch ein zu langer direkt nicht erzeugbarer QR-Code kann verkürzt werden.
+- **Geprüft:** Produktionsbuild und lokale Suite 71 bestanden / sechs plattformabhängig übersprungen. React-Tests mit leerer Liste prüfen direkte URL samt Query/Fragment, keine Anlage ohne Klick, Übernahme des neu angelegten Kurzlinks, ungültiges Protokoll und lange URL. Isolierter In-Memory-HTTP-Test: authentifizierte Anlage, Weiterleitung zum unveränderten Ziel und Erfassung von `utm_medium=qr`. Browser: eigene Testadresse eingegeben, direkte Vorschau und aktivierte Erstellaktion geprüft; schmale Ansicht bei 390 px ohne Seitenüberlauf geprüft. Kein realer Kurzlink in den Nutzerdaten angelegt; Browser-Erstellen mit echtem Backend, physischer Scan und Screenreaderprüfung bleiben offen.
+
+- Statistikansicht: kumulierter Graph mit kompaktem Hover-Tooltip; automatische Aktualisierung sichtbarer Ansichten alle 30 Sekunden und beim Zurückkehren zum Tab. Browserprüfung noch offen.
+
+- Graphlegende gruppiert Ansichten, Kurzlink-Weiterleitungen und Downloads; Datei- und ZIP-Ereignisse werden für Starts, Abbrüche und serverseitige Abschlüsse zusammengezählt. Fehler bleiben von Abbrüchen getrennt; Ereignisse zählen Übertragungsversuche einschließlich Range-Anfragen. Browserprüfung offen.
+
+- Die Graphlegende steht neben der Überschrift „Kumuliert“ und bricht bei Platzmangel um.
+
+- Graph-Tooltip und Legende verwenden die kurze Beschriftung „Downloads erfolgreich“ für serverseitig abgeschlossene Übertragungen.
+
+- Kampagnenfilter sind unter „Weitere Filter“ integriert; aktive Kampagnenfilter werden dort angezeigt. Die markierten Hinweistexte wurden entfernt. Browserprüfung steht aus.
+
+- Statistik: Kennzahlenblock unter dem Graphen und Erklärungstext unter dem Kalender entfernt.
+
+- Statistikoberfläche: Ereignislog, Kampagnengenerator und weitere Auswertungen einschließlich Heatmap vorerst entfernt; Graph und Kalender bleiben. Kalenderauswahl öffnet den Stundenverlauf. Erfassung, Datenbank und Analytics-API wurden nicht verändert; bestehende Aufbewahrungsregeln gelten weiterhin. Spätere Darstellung der gespeicherten Daten offen. Browserprüfung steht aus.
+
+- Verbliebene Statistik-Hinweistexte und DB-IP-Attribution auf der Statistikseite entfernt; die Attribution bleibt in den GeoIP-Einstellungen sichtbar. Datenerfassung unverändert.
+
+- Filter-Toggles für Kurzlinks und Freigaben behalten beim Wechsel ihre ursprüngliche Reihenfolge; das animierte Ein- und Ausklappen sowie reduzierte Bewegung bleiben erhalten. Browserprüfung der Animation steht aus.
+
+- Freigabenverwaltung zusammengeführt: Gemeinsame Liste und Suche/Statusfilter für Datenfreigaben und Kurzlinks; bestehende Aktionen und Bearbeitung bleiben je Typ. Erstellung über „Lokal“, „Hochladen“ oder „Kurzlink“ oberhalb der jeweiligen Felder. Alte Route `#kurzlinks` öffnet die Freigabenansicht. Build und lokale Suite erfolgreich (72 bestanden, 6 übersprungen); interaktive Browser-, Mobil- und Bedienprüfung steht aus.
+
+- Gemeinsame Freigabenliste: Symbole kennzeichnen Einzeldatei, Ordner, mehrere Elemente und Kurzlink. Der geschützte Listenendpunkt liefert dafür nur die Inhaltsart; Browserprüfung offen.
+
+- Freigabeerstellung: „Kurzlink“ steht links und ist standardmäßig ausgewählt; „Lokal“ heißt jetzt „Lokal freigeben“. Browserprüfung offen.
+
+- Lokale Freigabeauswahl: Dezenter Trenner und Abstand zwischen Formular und Quellen-/Ordnerauswahl ergänzt; Browserprüfung offen.
+
+- Statusfilter der Freigaben darf auf schmalen Bildschirmen in der Kopfzeile umbrechen und bleibt bei Bedarf horizontal scrollbar; der Inhaltsrand begrenzt seine Breite. Browserprüfung der Animation und schmaler Ansichten offen.
+
+- Freigabenliste: QR-Aktion öffnet die QR-Werkbank mit dem jeweiligen Kurzlink bzw. der jeweiligen Freigabe; vorhandene Gestaltung bleibt erhalten. Browserprüfung offen.
+
+- QR-Export: Breitenwahl neben dem Format-Toggle, bei sehr wenig Platz umgebrochen. Browserprüfung offen.

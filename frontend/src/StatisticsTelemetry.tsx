@@ -78,8 +78,8 @@ export function StatisticsTelemetry({report,dateTimeSettings}:{report:TelemetryR
 export function CampaignFilters({value,onApply}:{value:{source:string;medium:string;campaign:string};onApply:(value:{source:string;medium:string;campaign:string})=>void}) {
   const [draft,setDraft]=useState(value);
   const active=Object.values(value).some(Boolean);
-  return <details className="statistics-filter-panel"><summary>Kampagne eingrenzen{active ? " · Filter aktiv" : ""}</summary><form className="analytics-campaign-form" onSubmit={event => {event.preventDefault();onApply({source:draft.source.trim(),medium:draft.medium.trim(),campaign:draft.campaign.trim()});}}>
+  return <form className="analytics-campaign-form" onSubmit={event => {event.preventDefault();onApply({source:draft.source.trim(),medium:draft.medium.trim(),campaign:draft.campaign.trim()});}}>
     {([["source","Quelle"],["medium","Medium"],["campaign","Kampagne"]] as const).map(([key,label]) => <label className="compact-field" key={key}><span>{label}</span><input value={draft[key]} maxLength={100} onChange={event => setDraft({...draft,[key]:event.target.value})}/></label>)}
     <button>Filter anwenden</button><button type="button" className="secondary" disabled={!active} onClick={() => {const empty={source:"",medium:"",campaign:""};setDraft(empty);onApply(empty);}}>Zurücksetzen</button>
-  </form><p className="muted">Exakter Abgleich mit den selbst angegebenen Kennzeichnungen. Filter gelten für Zeitraum, Log und Export.</p></details>;
+  </form>;
 }

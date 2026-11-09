@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { DateTimeSettings } from "../../backend/src/date-time-settings";
+import { SettingsSection } from "./SettingsSection";
 import { createAutosave } from "./autosave";
 export const browserDateTime: DateTimeSettings = {region:"auto",timeFormat:"auto"};
 export function RegionTimeSettings({value,onChange,notify}: {value:DateTimeSettings;onChange:(value:DateTimeSettings)=>void;notify:(message:string,error?:boolean)=>void}) {
@@ -15,8 +16,8 @@ export function RegionTimeSettings({value,onChange,notify}: {value:DateTimeSetti
   return ()=>{controller.abort();saver.cancel();};
  },[saver]);
  function update(change:Partial<DateTimeSettings>) {const next={...current.current,...change};current.current=next;onChange(next);saver.schedule(next);}
- return <div className="settings-block"><h2>Region und Zeitformat</h2><div className="region-settings">
+ return <SettingsSection title="Region und Zeitformat"><div className="region-settings">
   <label className="compact-field"><span>Region</span><select value={value.region} onChange={event=>update({region:event.target.value as DateTimeSettings["region"]})}><option value="auto">Browser</option><option value="de-DE">Deutsch (Deutschland)</option><option value="en-GB">Englisch (Vereinigtes Königreich)</option><option value="en-US">Englisch (USA)</option></select></label>
   <label className="compact-field"><span>Zeitformat</span><select value={value.timeFormat} onChange={event=>update({timeFormat:event.target.value as DateTimeSettings["timeFormat"]})}><option value="auto">Browser / Region</option><option value="24">24 Stunden</option><option value="12">12 Stunden</option></select></label>
- </div></div>;
+ </div></SettingsSection>;
 }
